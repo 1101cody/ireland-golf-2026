@@ -131,8 +131,15 @@ input:focus{outline:none;border-color:var(--gold)}
 .hole-table td{padding:5px 4px;text-align:center;border-bottom:1px solid var(--cream-dk)}
 .hole-table tr:last-child td{border-bottom:none}
 .hole-table .hi{font-weight:700;color:var(--ink)}
-.score-input{width:42px;padding:5px 2px;border:1.5px solid var(--cream-dkr);border-radius:5px;text-align:center;font-size:13px}
+.score-input{width:36px;padding:3px 2px;border:1.5px solid var(--cream-dkr);border-radius:5px;text-align:center;font-size:13px;-moz-appearance:textfield}
+.score-input::-webkit-outer-spin-button,.score-input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 .score-input:focus{border-color:var(--gold);outline:none}
+.stepper{display:inline-flex;flex-direction:column;align-items:center;gap:2px}
+.stepper-input{width:32px;padding:2px 0;border:1.5px solid var(--cream-dkr);border-radius:5px;text-align:center;font-size:14px;font-weight:700;color:var(--ink);background:#fff;-moz-appearance:textfield}
+.stepper-input::-webkit-outer-spin-button,.stepper-input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.stepper-input:focus{border-color:var(--gold);outline:none}
+.stepper-btn{width:32px;height:22px;border:none;border-radius:4px;background:var(--cream-dk);color:var(--ink-md);font-size:14px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+.stepper-btn:active{background:var(--gold);color:#fff}
 .cell-won{background:var(--won-bg);color:var(--won);font-weight:700}
 .cell-lost{background:var(--lost-bg);color:var(--lost);font-weight:700}
 .cell-halve{background:var(--halve-bg);color:var(--halve);font-weight:700}
@@ -560,10 +567,13 @@ function renderNetStroke(r){
           const n=g?g-strk:null;
           if(g){netTotal+=n;grossTotal+=g;}
           return `<td>
-            <input class="score-input" type="number" min="1" max="12"
-              value="${gross[h]||''}"
-              oninput="setNSScore(${r.id},${pi},${h},this.value)" onchange="setNSScore(${r.id},${pi},${h},this.value)"
-              placeholder="${pars[h]}"/>
+            <div class="stepper">
+              <button class="stepper-btn" onclick="setNSScore(${r.id},${pi},${h},(parseInt('${gross[h]||0}')||0)+1)">+</button>
+              <input class="stepper-input" type="number" min="1" max="15" value="${g||''}" placeholder="${pars[h]}"
+                onchange="if(this.value)setNSScore(${r.id},${pi},${h},this.value)"
+                oninput="if(this.value&&this.value.length<=2)setNSScore(${r.id},${pi},${h},this.value)"/>
+              <button class="stepper-btn" onclick="setNSScore(${r.id},${pi},${h},Math.max(1,(parseInt('${gross[h]||0}')||0)-1))">−</button>
+            </div>
             ${strk>0?`<div class="stroke-dot" title="${strk} stroke(s)"></div>`:''}
             ${g?`<div style="font-size:9px;color:var(--green);font-weight:700">${n}</div>`:''}
           </td>`;
@@ -613,7 +623,7 @@ function setNSScore(rndId,pi,hole,val){
   if(!STATE.scores[rndId].gross[pi]) STATE.scores[rndId].gross[pi]=Array(18).fill('');
   STATE.scores[rndId].gross[pi][hole]=val;
   save();
-  renderNSLeaderboard(rndId);
+  renderNetStroke(ROUNDS[rndId]);
 }
 
 function renderNSLeaderboard(rndId){
@@ -800,8 +810,13 @@ function renderMatchCard(r,matchup,matchIdx,fmt,c){
           const g=gross[pi][h]||'';
           const st=strokesOnHole(chcps[pi],sis[h]);
           return `<td>
-            <input class="score-input" type="number" min="1" max="15" value="${g}"
-              oninput="setMatchScore(${r.id},'${mkey}',${pi},${h},this.value)" onchange="setMatchScore(${r.id},'${mkey}',${pi},${h},this.value)"/>
+            <div class="stepper">
+              <button class="stepper-btn" onclick="setMatchScore(${r.id},'${mkey}',${pi},${h},(parseInt('${g}')||0)+1)">+</button>
+              <input class="stepper-input" type="number" min="1" max="15" value="${g||''}" placeholder="${pars[h]}"
+                onchange="if(this.value)setMatchScore(${r.id},'${mkey}',${pi},${h},this.value)"
+                oninput="if(this.value&&this.value.length<=2)setMatchScore(${r.id},'${mkey}',${pi},${h},this.value)"/>
+              <button class="stepper-btn" onclick="setMatchScore(${r.id},'${mkey}',${pi},${h},Math.max(1,(parseInt('${g}')||0)-1))">−</button>
+            </div>
             ${st?`<span class="stroke-dot"></span>`:''}
           </td>`;
         }).join('')}
@@ -815,8 +830,13 @@ function renderMatchCard(r,matchup,matchIdx,fmt,c){
           const g=gross[pi][h]||'';
           const st=strokesOnHole(chcps[pi],sis[h]);
           return `<td>
-            <input class="score-input" type="number" min="1" max="15" value="${g}"
-              oninput="setMatchScore(${r.id},'${mkey}',${pi},${h},this.value)" onchange="setMatchScore(${r.id},'${mkey}',${pi},${h},this.value)"/>
+            <div class="stepper">
+              <button class="stepper-btn" onclick="setMatchScore(${r.id},'${mkey}',${pi},${h},(parseInt('${g}')||0)+1)">+</button>
+              <input class="stepper-input" type="number" min="1" max="15" value="${g||''}" placeholder="${pars[h]}"
+                onchange="if(this.value)setMatchScore(${r.id},'${mkey}',${pi},${h},this.value)"
+                oninput="if(this.value&&this.value.length<=2)setMatchScore(${r.id},'${mkey}',${pi},${h},this.value)"/>
+              <button class="stepper-btn" onclick="setMatchScore(${r.id},'${mkey}',${pi},${h},Math.max(1,(parseInt('${g}')||0)-1))">−</button>
+            </div>
             ${st?`<span class="stroke-dot"></span>`:''}
           </td>`;
         }).join('')}
@@ -874,7 +894,7 @@ function setMatchScore(rndId,mkey,pi,hole,val){
     STATE.scores[rndId].matches[mkey].gross[pi]=Array(18).fill('');
   STATE.scores[rndId].matches[mkey].gross[pi][hole]=val;
   save();
-  updateMatchStatusInPlace(rndId,mkey); // update status without re-rendering inputs
+  renderMatchScoring(ROUNDS[rndId]);
 }
 
 function updateMatchStatusInPlace(rndId,mkey){
