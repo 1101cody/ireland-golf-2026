@@ -662,15 +662,27 @@ async function saveAllPlayers(){
     const hi   = parseFloat(document.getElementById('phi'+i)?.value)||10;
     const buyin= parseFloat(document.getElementById('pbi'+i)?.value)||100;
     STATE.players[i] = {name,hi,buyin};
-    updates.push(sb('players?slot=eq.'+i, {
-      method:'PATCH',
-      body:{name,hi,buyin},
-      prefer:'return=minimal'
-    }));
+    updates.push(
+      sb('players', {
+        method: 'POST',
+        body: {slot:i, name, hi, buyin},
+        headers: {
+          'Prefer': 'resolution=merge-duplicates,return=minimal'
+        }
+      })
+    );
   }
   try{
     await Promise.all(updates);
-    updateHero(); showAlert('Players saved!','green');
+    // Refresh ME if the logged-in player's name was changed
+    if(ME && STATE.players[ME.slot]){
+      ME.name = STATE.players[ME.slot].name;
+      saveIdentity();
+      document.getElementById('meDisplay').textContent = ME.name + ' ✏️';
+    }
+    updateHero();
+    renderSchedule();
+    showAlert('Players saved!','green');
   }catch(e){ showAlert('Save failed: '+e.message,'red'); }
 }
 
@@ -959,60 +971,95 @@ function renderMatchCard(r,matchup,matchIdx,fmt,c){
   }
 
   let score=0,holesPlayed=0,matchOver=false;
+  let bbTotalA=0,bbTotalB=0;
   const holeStatuses=pars.map((_,h)=>{
     const res=holeResult(h); if(!res)return null;
     holesPlayed++;
     const holesRemaining=holeCount-holesPlayed;
-    if(res.a<res.b)score++;else if(res.b<res.a)score--;
-    if(Math.abs(score)>holesRemaining&&!matchOver)matchOver=true;
+    if(fmt==='BB'){
+      bbTotalA+=res.a; bbTotalB+=res.b;
+    } else {
+      if(res.a<res.b)score++;else if(res.b<res.a)score--;
+      if(Math.abs(score)>holesRemaining&&!matchOver)matchOver=true;
+    }
+    // For BB: lower net score wins the hole (like stroke play)
     return res.a<res.b?'A':res.b<res.a?'B':'H';
   });
   const holesRemaining=holeCount-holesPlayed;
+  if(fmt==='BB') score=bbTotalA-bbTotalB;
   let statusStr='All Square',statusClass='status-sq';
-  if(score>0){statusStr=`${score} UP (${holesRemaining} to play)`;statusClass='status-up';}
-  else if(score<0){statusStr=`${Math.abs(score)} DOWN (${holesRemaining} to play)`;statusClass='status-dn';}
-  if(holesPlayed===holeCount){
-    if(score>0)statusStr=`A wins ${score} UP`;else if(score<0)statusStr=`B wins ${Math.abs(score)} UP`;else statusStr='Halved';
+  if(fmt==='BB'){
+    // Lower total net score is BETTER — A leads when bbTotalA < bbTotalB
+    const diff=bbTotalA-bbTotalB; // negative means A is ahead
+    if(holesPlayed===0){ statusStr='No scores yet'; statusClass='status-sq'; }
+    else if(diff<0){ statusStr=`A leads — ${bbTotalA} vs ${bbTotalB} net`; statusClass='status-up'; }
+    else if(diff>0){ statusStr=`B leads — ${bbTotalB} vs ${bbTotalA} net`; statusClass='status-dn'; }
+    else { statusStr=`Tied — ${bbTotalA} net each`; statusClass='status-sq'; }
+    if(holesPlayed===holeCount){
+      if(diff<0) statusStr=`A wins! ${bbTotalA} vs ${bbTotalB} net`;
+      else if(diff>0) statusStr=`B wins! ${bbTotalB} vs ${bbTotalA} net`;
+      else statusStr=`Tied — ${bbTotalA} net each (playoff!)`;
+    }
+  } else {
+    if(score>0){statusStr=`${score} UP (${holesRemaining} to play)`;statusClass='status-up';}
+    else if(score<0){statusStr=`${Math.abs(score)} DOWN (${holesRemaining} to play)`;statusClass='status-dn';}
+    if(holesPlayed===holeCount){
+      if(score>0)statusStr=`A wins ${score} UP`;else if(score<0)statusStr=`B wins ${Math.abs(score)} UP`;else statusStr='Halved';
+    }
+    if(matchOver&&holesPlayed<holeCount){ if(score>0)statusStr=`A wins ${score}&${holesRemaining}`;else statusStr=`B wins ${Math.abs(score)}&${holesRemaining}`; }
   }
-  if(matchOver&&holesPlayed<holeCount){ if(score>0)statusStr=`A wins ${score}&${holesRemaining}`;else statusStr=`B wins ${Math.abs(score)}&${holesRemaining}`; }
 
   const teamNames=side=>{ const pair=side==='A'?pairA:pairB; return pair.map(pi=>`<span class="chip chip-${playerTeam(pi).color}">${playerName(pi)}</span>`).join(' '); };
   const savedResult=STATE.results[r.id]?.matches?.[mkey];
 
   const inputRows=fmt==='BB'?
-    [...pairA,...pairB].map(pi=>`
-      <tr>
+    [...pairA,...pairB].map(pi=>{
+      const grossRow=gross[pi];
+      let runningTotal=0;
+      const cells=pars.map((_,h)=>{
+        const g=grossRow[h]||'',st=strokesOnHole(chcps[pi],sis[h]);
+        const gInt=parseInt(g)||0;
+        if(gInt) runningTotal+=gInt-st;
+        return `<td><div class="stepper">
+          <button class="stepper-btn" onclick="setMatchScore(${r.id},'${mkey}',${pi},${h},(parseInt('${g}')||0)+1)">+</button>
+          <input class="stepper-input" type="number" min="1" max="15" value="${g}" placeholder="${pars[h]}"
+            onchange="if(this.value)setMatchScore(${r.id},'${mkey}',${pi},${h},this.value)"
+            oninput="if(this.value&&this.value.length<=2)setMatchScore(${r.id},'${mkey}',${pi},${h},this.value)"/>
+          <button class="stepper-btn" onclick="setMatchScore(${r.id},'${mkey}',${pi},${h},Math.max(1,(parseInt('${g}')||0)-1))">−</button>
+        </div>${st?`<span class="stroke-dot"></span>`:''}</td>`;
+      }).join('');
+      return `<tr>
         <td class="hi">${playerName(pi).split(' ')[0]} <span class="chip chip-${playerTeam(pi).color}" style="font-size:9px">${pairA.includes(pi)?'A':'B'}</span></td>
-        ${pars.map((_,h)=>{
-          const g=gross[pi][h]||'',st=strokesOnHole(chcps[pi],sis[h]);
-          return `<td><div class="stepper">
-            <button class="stepper-btn" onclick="setMatchScore(${r.id},'${mkey}',${pi},${h},(parseInt('${g}')||0)+1)">+</button>
-            <input class="stepper-input" type="number" min="1" max="15" value="${g||''}" placeholder="${pars[h]}"
-              onchange="if(this.value)setMatchScore(${r.id},'${mkey}',${pi},${h},this.value)"
-              oninput="if(this.value&&this.value.length<=2)setMatchScore(${r.id},'${mkey}',${pi},${h},this.value)"/>
-            <button class="stepper-btn" onclick="setMatchScore(${r.id},'${mkey}',${pi},${h},Math.max(1,(parseInt('${g}')||0)-1))">−</button>
-          </div>${st?`<span class="stroke-dot"></span>`:''}</td>`;
-        }).join('')}
-        <td></td>
-      </tr>`).join(''):
-    [pairA[0],pairB[0]].map(pi=>`
-      <tr>
+        ${cells}
+        <td class="net-score" style="min-width:36px">${runningTotal||''}</td>
+      </tr>`;
+    }).join(''):
+    [pairA[0],pairB[0]].map(pi=>{
+      const grossRow=gross[pi];
+      let runningNet=0;
+      const cells=pars.map((_,h)=>{
+        const g=grossRow[h]||'',st=strokesOnHole(chcps[pi],sis[h]);
+        const gInt=parseInt(g)||0;
+        if(gInt) runningNet+=gInt-st;
+        return `<td><div class="stepper">
+          <button class="stepper-btn" onclick="setMatchScore(${r.id},'${mkey}',${pi},${h},(parseInt('${g}')||0)+1)">+</button>
+          <input class="stepper-input" type="number" min="1" max="15" value="${g}" placeholder="${pars[h]}"
+            onchange="if(this.value)setMatchScore(${r.id},'${mkey}',${pi},${h},this.value)"
+            oninput="if(this.value&&this.value.length<=2)setMatchScore(${r.id},'${mkey}',${pi},${h},this.value)"/>
+          <button class="stepper-btn" onclick="setMatchScore(${r.id},'${mkey}',${pi},${h},Math.max(1,(parseInt('${g}')||0)-1))">−</button>
+        </div>${st?`<span class="stroke-dot"></span>`:''}</td>`;
+      }).join('');
+      return `<tr>
         <td class="hi">${playerName(pi).split(' ')[0]} <span class="chip chip-${playerTeam(pi).color}" style="font-size:9px">${pairA.includes(pi)?'A':'B'}</span></td>
-        ${pars.map((_,h)=>{
-          const g=gross[pi][h]||'',st=strokesOnHole(chcps[pi],sis[h]);
-          return `<td><div class="stepper">
-            <button class="stepper-btn" onclick="setMatchScore(${r.id},'${mkey}',${pi},${h},(parseInt('${g}')||0)+1)">+</button>
-            <input class="stepper-input" type="number" min="1" max="15" value="${g||''}" placeholder="${pars[h]}"
-              onchange="if(this.value)setMatchScore(${r.id},'${mkey}',${pi},${h},this.value)"
-              oninput="if(this.value&&this.value.length<=2)setMatchScore(${r.id},'${mkey}',${pi},${h},this.value)"/>
-            <button class="stepper-btn" onclick="setMatchScore(${r.id},'${mkey}',${pi},${h},Math.max(1,(parseInt('${g}')||0)-1))">−</button>
-          </div>${st?`<span class="stroke-dot"></span>`:''}</td>`;
-        }).join('')}
-        <td></td>
-      </tr>`).join('');
+        ${cells}
+        <td class="net-score" style="min-width:36px">${runningNet||''}</td>
+      </tr>`;
+    }).join('');
 
   const holeResRow=holeStatuses.map((s,h)=>{ if(!s)return`<td></td>`; return`<td class="${s==='A'?'cell-won':s==='B'?'cell-lost':'cell-halve'}">${s==='H'?'½':s==='A'?'✓':'✗'}</td>`; }).join('')+
-    `<td class="${statusClass}"><small>${score>0?'+'+score:score<0?score:'AS'}</small></td>`;
+    (fmt==='BB'
+      ? `<td class="${statusClass}"><small>${holesPlayed?`${bbTotalA}/${bbTotalB}`:''}</small></td>`
+      : `<td class="${statusClass}"><small>${score>0?'+'+score:score<0?score:'AS'}</small></td>`);
 
   return `
   <div class="card" id="match-card-${r.id}-${mkey}" style="margin-bottom:16px">
@@ -1064,10 +1111,34 @@ async function saveMatchResult(rndId,mkey,score,holesPlayed,holeCount,maxPts){
   const r=ROUNDS[rndId],draw=STATE.draws[rndId],matchIdx=parseInt(mkey.replace('m',''));
   const matchups=[[draw[0],draw[1]],[draw[2],draw[3]]];
   const [pairA,pairB]=matchups[matchIdx];
+  const c=COURSES[r.course];
+  const mdata=STATE.scores[rndId]?.matches?.[mkey];
+
+  // Re-compute BB totals fresh from live state
+  let bbA=0,bbB=0;
+  if(r.format==='BB' && mdata){
+    const chcps={};
+    [...pairA,...pairB].forEach(pi=>chcps[pi]=courseHcp(STATE.players[pi].hi,r.slope,r.rating,r.par));
+    c.pars.forEach((_,h)=>{
+      const aN=pairA.map(pi=>{const g=parseInt(mdata.gross?.[pi]?.[h]);return(!g||isNaN(g))?null:g-strokesOnHole(chcps[pi],c.si[h]);}).filter(x=>x!==null);
+      const bN=pairB.map(pi=>{const g=parseInt(mdata.gross?.[pi]?.[h]);return(!g||isNaN(g))?null:g-strokesOnHole(chcps[pi],c.si[h]);}).filter(x=>x!==null);
+      if(aN.length) bbA+=Math.min(...aN);
+      if(bN.length) bbB+=Math.min(...bN);
+    });
+  }
+
   let ptsA=0,ptsB=0,note='';
-  if(score>0){ptsA=maxPts;note=`${pairA.map(playerName).join('+')} win ${score} UP → ${maxPts} pts`;}
-  else if(score<0){ptsB=maxPts;note=`${pairB.map(playerName).join('+')} win ${Math.abs(score)} UP → ${maxPts} pts`;}
-  else{ptsA=maxPts/2;ptsB=maxPts/2;note=`Halved → ${maxPts/2} pts each`;}
+  if(r.format==='BB'){
+    // Lower net total wins
+    if(bbA<bbB){ptsA=maxPts;note=`${pairA.map(playerName).join('+')} win (${bbA} vs ${bbB} net) → ${maxPts} pts`;}
+    else if(bbB<bbA){ptsB=maxPts;note=`${pairB.map(playerName).join('+')} win (${bbB} vs ${bbA} net) → ${maxPts} pts`;}
+    else{ptsA=maxPts/2;ptsB=maxPts/2;note=`Tied (${bbA} net each) → ${maxPts/2} pts each`;}
+  } else {
+    // MP/SMP: match score (positive = A up)
+    if(score>0){ptsA=maxPts;note=`${pairA.map(playerName).join('+')} win ${score} UP → ${maxPts} pts`;}
+    else if(score<0){ptsB=maxPts;note=`${pairB.map(playerName).join('+')} win ${Math.abs(score)} UP → ${maxPts} pts`;}
+    else{ptsA=maxPts/2;ptsB=maxPts/2;note=`Halved → ${maxPts/2} pts each`;}
+  }
   if(!STATE.results[rndId]) STATE.results[rndId]={type:r.format,matches:{}};
   if(!STATE.results[rndId].matches) STATE.results[rndId].matches={};
   STATE.results[rndId].matches[mkey]={pairA,pairB,ptsA,ptsB,note};
