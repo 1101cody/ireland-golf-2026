@@ -823,17 +823,15 @@ function renderMatchCard(r,matchup,matchIdx,fmt,c){
         <td></td>
       </tr>`).join('');
 
-  // Hole result row
-  const holeResRow=`<tr>
-    ${holeStatuses.map((s,h)=>{
+  const holeResRow=
+    holeStatuses.map((s,h)=>{
       if(!s) return `<td></td>`;
       return `<td class="${s==='A'?'cell-won':s==='B'?'cell-lost':'cell-halve'}">${s==='H'?'½':s==='A'?'✓':'✗'}</td>`;
-    }).join('')}
-    <td class="${statusClass}"><small>${score>0?'+'+score:score<0?score:'AS'}</small></td>
-  </tr>`;
+    }).join('')+
+    `<td class="${statusClass}"><small>${score>0?'+'+score:score<0?score:'AS'}</small></td>`;
 
   return `
-  <div class="card" style="margin-bottom:16px">
+  <div class="card" id="match-card-${r.id}-${mkey}" style="margin-bottom:16px">
     <div class="card-head">
       <span class="card-title">Match ${matchIdx+1}</span>
       <span class="status-badge ${statusClass}">${statusStr}</span>
@@ -856,12 +854,12 @@ function renderMatchCard(r,matchup,matchIdx,fmt,c){
         </thead>
         <tbody>
           ${inputRows}
-          <tr style="background:#f9f9f9"><td class="hi" style="font-size:10px">Result</td>${holeResRow}</tr>
+          <tr style="background:#f9f9f9" class="hole-res-row"><td class="hi" style="font-size:10px">Result</td>${holeResRow}</tr>
         </tbody>
       </table>
       </div>
       ${savedResult?`<div class="alert alert-green" style="margin-top:10px">✓ Saved: ${savedResult.note}</div>`:''}
-      <button class="btn btn-gold" style="margin-top:12px" onclick="saveMatchResult(${r.id},'${mkey}',${score},${holesPlayed},${holeCount},${r.pts})">
+      <button class="btn btn-gold save-match-btn" style="margin-top:12px" onclick="saveMatchResult(${r.id},'${mkey}',${score},${holesPlayed},${holeCount},${r.pts})">
         💾 Save Match ${matchIdx+1} Result
       </button>
     </div>
@@ -876,7 +874,95 @@ function setMatchScore(rndId,mkey,pi,hole,val){
     STATE.scores[rndId].matches[mkey].gross[pi]=Array(18).fill('');
   STATE.scores[rndId].matches[mkey].gross[pi][hole]=val;
   save();
-  renderScores(); // re-render to update status
+  updateMatchStatusInPlace(rndId,mkey); // update status without re-rendering inputs
+}
+
+function updateMatchStatusInPlace(rndId,mkey){
+  const r=ROUNDS[rndId];
+  const draw=STATE.draws[rndId];
+  if(!draw) return;
+  const matchIdx=parseInt(mkey.replace('m',''));
+  const matchups=[[draw[0],draw[1]],[draw[2],draw[3]]];
+  const [pairA,pairB]=matchups[matchIdx];
+  const fmt=r.format;
+  const c=COURSES[r.course];
+  const pars=c.pars, sis=c.si;
+  const holeCount=pars.length;
+  const mdata=STATE.scores[rndId]?.matches?.[mkey]||{gross:{}};
+  const chcps={};
+  [...pairA,...pairB].forEach(pi=>chcps[pi]=courseHcp(STATE.players[pi].hi,r.slope,r.rating,r.par));
+  const gross={};
+  [...pairA,...pairB].forEach(pi=>gross[pi]=mdata.gross[pi]||Array(holeCount).fill(''));
+
+  function netH(pi,h){
+    const g=parseInt(gross[pi][h]);
+    if(!g||isNaN(g)) return null;
+    return g-strokesOnHole(chcps[pi],sis[h]);
+  }
+  function holeResult(h){
+    if(fmt==='BB'){
+      const aNets=pairA.map(pi=>netH(pi,h)).filter(x=>x!==null);
+      const bNets=pairB.map(pi=>netH(pi,h)).filter(x=>x!==null);
+      if(!aNets.length||!bNets.length) return null;
+      return {a:Math.min(...aNets),b:Math.min(...bNets)};
+    } else {
+      const piA=pairA[0],piB=pairB[0];
+      const gA=parseInt(gross[piA][h]);
+      const gB=parseInt(gross[piB][h]);
+      if(isNaN(gA)||isNaN(gB)) return null;
+      return {a:gA-strokesOnHole(chcps[piA],sis[h]),b:gB-strokesOnHole(chcps[piB],sis[h])};
+    }
+  }
+
+  let score=0,holesPlayed=0,matchOver=false;
+  const holeStatuses=pars.map((_,h)=>{
+    const res=holeResult(h);
+    if(!res) return null;
+    holesPlayed++;
+    const holesRemaining=holeCount-holesPlayed;
+    if(res.a<res.b) score++;
+    else if(res.b<res.a) score--;
+    if(Math.abs(score)>holesRemaining && !matchOver) matchOver=true;
+    return res.a<res.b?'A':res.b<res.a?'B':'H';
+  });
+  const holesRemaining=holeCount-holesPlayed;
+
+  let statusStr='All Square',statusClass='status-sq';
+  if(score>0){statusStr=`${score} UP (${holesRemaining} to play)`;statusClass='status-up';}
+  else if(score<0){statusStr=`${Math.abs(score)} DOWN (${holesRemaining} to play)`;statusClass='status-dn';}
+  if(holesPlayed===holeCount){
+    if(score>0) statusStr=`A wins ${score} UP`;
+    else if(score<0) statusStr=`B wins ${Math.abs(score)} UP`;
+    else statusStr='Halved';
+  }
+  if(matchOver && holesPlayed<holeCount){
+    if(score>0) statusStr=`A wins ${score}&${holesRemaining}`;
+    else statusStr=`B wins ${Math.abs(score)}&${holesRemaining}`;
+  }
+
+  // Update status badge
+  const card=document.getElementById(`match-card-${rndId}-${mkey}`);
+  if(!card) return;
+  const badge=card.querySelector('.status-badge');
+  if(badge){badge.className=`status-badge ${statusClass}`;badge.textContent=statusStr;}
+
+  // Update hole result row
+  const resRow=card.querySelector('.hole-res-row');
+  if(resRow){
+    let innerHtml='<td class="hi" style="font-size:10px">Result</td>';
+    holeStatuses.forEach((s,h)=>{
+      if(!s){innerHtml+=`<td></td>`;return;}
+      innerHtml+=`<td class="${s==='A'?'cell-won':s==='B'?'cell-lost':'cell-halve'}">${s==='H'?'½':s==='A'?'✓':'✗'}</td>`;
+    });
+    innerHtml+=`<td class="${statusClass}"><small>${score>0?'+'+score:score<0?score:'AS'}</small></td>`;
+    resRow.innerHTML=innerHtml;
+  }
+
+  // Update save button with current score/holesPlayed
+  const saveBtn=card.querySelector('.save-match-btn');
+  if(saveBtn){
+    saveBtn.onclick=()=>saveMatchResult(rndId,mkey,score,holesPlayed,holeCount,r.pts);
+  }
 }
 
 function saveMatchResult(rndId,mkey,score,holesPlayed,holeCount,maxPts){
