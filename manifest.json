@@ -1,0 +1,18 @@
+{
+  "name": "Ireland Golf 2026",
+  "short_name": "IRL Golf",
+  "description": "Ryder Cup format golf trip tracker \u2014 July 2026",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#1a3a2a",
+  "theme_color": "#1a3a2a",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' rx='80' fill='%231a3a2a'/><text y='320' x='80' font-size='320'>\ud83c\uddee\ud83c\uddea</text></svg>",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
