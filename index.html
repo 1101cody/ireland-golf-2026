@@ -303,7 +303,10 @@ if('serviceWorker' in navigator){
       <button class="btn btn-gold btn-sm" onclick="saveAllPlayers()">💾 Save All</button>
     </div>
     <div class="card-body">
-      <div class="info-box" style="margin-bottom:14px">Enter each player's <strong>Handicap Index</strong>. Buy-in per person.</div>
+      <div class="info-box" style="margin-bottom:14px">Enter each player's <strong>Handicap Index</strong>. Set the shared buy-in amount below — everyone pays the same.</div>
+      <div class="form-row" style="margin-bottom:16px;max-width:240px">
+        <div><label>💰 Buy-in per person CA$</label><input type="number" id="groupBuyin" value="100" step="5" min="0"/></div>
+      </div>
       <div id="playerForms"></div>
     </div>
   </div>
@@ -546,10 +549,45 @@ function setSyncDot(state){
 }
 
 // ═══════════════════════════════════════════════════════════
+// LOCAL STORAGE PERSISTENCE (fallback / cache layer)
+// ═══════════════════════════════════════════════════════════
+const LS_KEY = 'igrc26_state';
+
+function saveLocal(){
+  try{
+    const snap = {
+      players: STATE.players,
+      draws:   STATE.draws,
+      scores:  STATE.scores,
+      results: STATE.results,
+    };
+    localStorage.setItem(LS_KEY, JSON.stringify(snap));
+  }catch(e){}
+}
+
+function loadLocal(){
+  try{
+    const s = localStorage.getItem(LS_KEY);
+    if(!s) return false;
+    const snap = JSON.parse(s);
+    if(snap.players) STATE.players = snap.players;
+    if(snap.draws)   STATE.draws   = snap.draws;
+    if(snap.scores)  STATE.scores  = snap.scores;
+    if(snap.results) STATE.results = snap.results;
+    return true;
+  }catch(e){ return false; }
+}
+
+// ═══════════════════════════════════════════════════════════
 // LOAD ALL DATA FROM SUPABASE
 // ═══════════════════════════════════════════════════════════
 async function loadAll(){
   setSyncDot('');
+
+  // Always load local cache first so the app is usable immediately
+  const hadLocal = loadLocal();
+  if(hadLocal){ renderAll(); }
+
   try{
     const [players, draws, scores, results] = await Promise.all([
       sb('players?order=slot'),
@@ -565,6 +603,7 @@ async function loadAll(){
     scores.forEach(s=>{ STATE.scores[s.round_id] = s.data; });
     results.forEach(r=>{ STATE.results[r.round_id] = r.data; });
 
+    saveLocal(); // cache fresh server data
     renderAll();
     setSyncDot('live');
 
@@ -577,7 +616,11 @@ async function loadAll(){
 
   } catch(e){
     setSyncDot('err');
-    showAlert('Connection error: ' + e.message, 'red');
+    if(!hadLocal){
+      showAlert('Connection error: ' + e.message, 'red');
+    } else {
+      showAlert('⚠️ Offline — showing saved data. Scores will sync when reconnected.', 'gold');
+    }
   }
 }
 
@@ -641,15 +684,18 @@ function showAlert(msg,type){
 // ═══════════════════════════════════════════════════════════
 function renderPlayers(){
   const el=document.getElementById('playerForms');
+  const sharedBuyin = STATE.players[0]?.buyin || 100;
+  // Populate the group buyin field
+  const gbEl = document.getElementById('groupBuyin');
+  if(gbEl && !gbEl._dirty) gbEl.value = sharedBuyin;
   el.innerHTML=TEAMS.map(t=>`
     <div style="margin-bottom:18px">
       <div class="section-title"><span class="chip chip-${t.color}">${t.name} Team</span> — Roommates</div>
       ${t.players.map(pi=>{
         const p=STATE.players[pi];
-        return `<div class="form-row trio" style="margin-bottom:10px">
+        return `<div class="form-row" style="margin-bottom:10px">
           <div><label>Player ${pi+1} Name</label><input type="text" id="pn${pi}" value="${p.name}" placeholder="Name"/></div>
           <div><label>HI</label><input type="number" id="phi${pi}" value="${p.hi}" step="0.1" min="0" max="54"/></div>
-          <div><label>Buy-in CA$</label><input type="number" id="pbi${pi}" value="${p.buyin}" step="5" min="0"/></div>
         </div>`;
       }).join('')}
     </div>`).join('');
@@ -657,10 +703,11 @@ function renderPlayers(){
 
 async function saveAllPlayers(){
   const updates = [];
+  const sharedBuyin = parseFloat(document.getElementById('groupBuyin')?.value)||100;
   for(let i=0;i<8;i++){
     const name = document.getElementById('pn'+i)?.value||`Player ${i+1}`;
     const hi   = parseFloat(document.getElementById('phi'+i)?.value)||10;
-    const buyin= parseFloat(document.getElementById('pbi'+i)?.value)||100;
+    const buyin= sharedBuyin;
     STATE.players[i] = {name,hi,buyin};
     updates.push(
       sb('players', {
@@ -674,6 +721,7 @@ async function saveAllPlayers(){
   }
   try{
     await Promise.all(updates);
+    saveLocal();
     // Refresh ME if the logged-in player's name was changed
     if(ME && STATE.players[ME.slot]){
       ME.name = STATE.players[ME.slot].name;
@@ -744,14 +792,20 @@ async function randomizeDraw(roundIdx){
   const shuffled=fisherYates([0,1,2,3,4,5,6,7]);
   const pairs=[[shuffled[0],shuffled[1]],[shuffled[2],shuffled[3]],[shuffled[4],shuffled[5]],[shuffled[6],shuffled[7]]];
   STATE.draws[roundIdx]=pairs;
+  saveLocal();
+  // Always render immediately — local state is already set
+  renderSchedule(); renderScores();
+  // Then sync to Supabase in the background
   try{
-    await sb(`draws?round_id=eq.${roundIdx}`,{method:'PATCH',body:{pairs},prefer:'return=minimal'});
-    // If no row existed yet, insert
+    const res = await sb(`draws?round_id=eq.${roundIdx}`,{method:'PATCH',body:{pairs},prefer:'return=representation'});
+    // PATCH returns empty array if no row matched — fall through to INSERT
+    if(!res || (Array.isArray(res) && res.length===0)){
+      await sb('draws',{method:'POST',body:{round_id:roundIdx,pairs},prefer:'return=minimal'});
+    }
   }catch(e){
     try{ await sb('draws',{method:'POST',body:{round_id:roundIdx,pairs},prefer:'return=minimal'}); }
-    catch(e2){ showAlert('Draw save failed','red'); return; }
+    catch(e2){ /* already saved locally; will show on this device */ }
   }
-  renderSchedule(); renderScores();
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -778,11 +832,18 @@ function selectScoreRound(idx){ STATE.activeScoreRound=idx; renderScores(); }
 
 async function pushScore(rndId){
   const data = STATE.scores[rndId];
+  saveLocal(); // always persist locally first
   try{
     await sb(`scores?round_id=eq.${rndId}`,{method:'PATCH',body:{data},prefer:'return=minimal'});
+    setSyncDot('live');
   }catch(e){
-    try{ await sb('scores',{method:'POST',body:{round_id:rndId,data},prefer:'return=minimal'}); }
-    catch(e2){ /* silent fail - realtime will sync anyway */ }
+    try{
+      await sb('scores',{method:'POST',body:{round_id:rndId,data},prefer:'return=minimal'});
+      setSyncDot('live');
+    }catch(e2){
+      setSyncDot('err');
+      // Saved locally — scores are safe on this device and will sync when reconnected.
+    }
   }
 }
 
@@ -920,6 +981,7 @@ async function saveNSResult(rndId){
   [0,1,2,3,4,5,6,7].forEach(pi=>result.pts[pi]=0);
   winners.forEach(w=>result.pts[w.pi]=pts);
   STATE.results[rndId]=result;
+  saveLocal();
   try{
     await sb(`results?round_id=eq.${rndId}`,{method:'PATCH',body:{data:result},prefer:'return=minimal'});
   }catch(e){
@@ -1142,6 +1204,7 @@ async function saveMatchResult(rndId,mkey,score,holesPlayed,holeCount,maxPts){
   if(!STATE.results[rndId]) STATE.results[rndId]={type:r.format,matches:{}};
   if(!STATE.results[rndId].matches) STATE.results[rndId].matches={};
   STATE.results[rndId].matches[mkey]={pairA,pairB,ptsA,ptsB,note};
+  saveLocal();
   try{
     await sb(`results?round_id=eq.${rndId}`,{method:'PATCH',body:{data:STATE.results[rndId]},prefer:'return=minimal'});
   }catch(e){
