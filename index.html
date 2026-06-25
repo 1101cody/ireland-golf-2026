@@ -49,7 +49,7 @@ input{font-family:inherit}
 .page{display:none}.page.active{display:block}
 
 /* ── CARDS ── */
-.card{background:#fff;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.06);margin-bottom:16px;overflow:hidden}
+.card{background:#fff;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.06);margin-bottom:16px;overflow:visible}
 .card-head{padding:14px 16px;border-bottom:1px solid var(--cream-dk);display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
 .card-title{font-family:'Playfair Display',serif;font-size:17px;color:var(--green)}
 .card-body{padding:16px}
@@ -131,7 +131,7 @@ input:focus{outline:none;border-color:var(--gold)}
 .hole-table td{padding:5px 4px;text-align:center;border-bottom:1px solid var(--cream-dk)}
 .hole-table tr:last-child td{border-bottom:none}
 .hole-table .hi{font-weight:700;color:var(--ink)}
-.score-input{width:38px;padding:3px 2px;border:1.5px solid var(--cream-dkr);border-radius:5px;text-align:center;font-size:12px}
+.score-input{width:42px;padding:5px 2px;border:1.5px solid var(--cream-dkr);border-radius:5px;text-align:center;font-size:13px;-webkit-appearance:none;-moz-appearance:textfield}
 .score-input:focus{border-color:var(--gold);outline:none}
 .cell-won{background:var(--won-bg);color:var(--won);font-weight:700}
 .cell-lost{background:var(--lost-bg);color:var(--lost);font-weight:700}
@@ -562,7 +562,7 @@ function renderNetStroke(r){
           return `<td>
             <input class="score-input" type="number" min="1" max="12"
               value="${gross[h]||''}"
-              oninput="setNSScore(${r.id},${pi},${h},this.value)"
+              onchange="setNSScore(${r.id},${pi},${h},this.value)"
               placeholder="${pars[h]}"/>
             ${strk>0?`<div class="stroke-dot" title="${strk} stroke(s)"></div>`:''}
             ${g?`<div style="font-size:9px;color:var(--green);font-weight:700">${n}</div>`:''}
@@ -801,7 +801,7 @@ function renderMatchCard(r,matchup,matchIdx,fmt,c){
           const st=strokesOnHole(chcps[pi],sis[h]);
           return `<td>
             <input class="score-input" type="number" min="1" max="15" value="${g}"
-              oninput="setMatchScore(${r.id},'${mkey}',${pi},${h},this.value)"/>
+              onchange="setMatchScore(${r.id},'${mkey}',${pi},${h},this.value)"/>
             ${st?`<span class="stroke-dot"></span>`:''}
           </td>`;
         }).join('')}
@@ -816,7 +816,7 @@ function renderMatchCard(r,matchup,matchIdx,fmt,c){
           const st=strokesOnHole(chcps[pi],sis[h]);
           return `<td>
             <input class="score-input" type="number" min="1" max="15" value="${g}"
-              oninput="setMatchScore(${r.id},'${mkey}',${pi},${h},this.value)"/>
+              onchange="setMatchScore(${r.id},'${mkey}',${pi},${h},this.value)"/>
             ${st?`<span class="stroke-dot"></span>`:''}
           </td>`;
         }).join('')}
