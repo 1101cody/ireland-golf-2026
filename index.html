@@ -271,6 +271,23 @@ if('serviceWorker' in navigator){
 </head>
 <body>
 
+<!-- Reset Stats Modal -->
+<div class="identity-overlay" id="resetOverlay" style="display:none">
+  <div class="identity-box" style="max-width:380px">
+    <h2>🔐 Admin Reset</h2>
+    <p style="margin-bottom:14px">Enter the admin password to reset all scores, results, draws and notifications. <strong style="color:#c0392b">This cannot be undone.</strong></p>
+    <div style="margin-bottom:12px">
+      <label>Password</label>
+      <input type="password" id="resetPwInput" placeholder="Enter password" style="margin-top:4px" onkeydown="if(event.key==='Enter')confirmReset()"/>
+    </div>
+    <div id="resetError" style="color:#c0392b;font-size:12px;margin-bottom:10px;display:none">Incorrect password.</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-danger" onclick="confirmReset()">🗑 Reset Everything</button>
+      <button class="btn btn-outline" onclick="closeResetModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <!-- Identity Overlay -->
 <div class="identity-overlay" id="identityOverlay" style="display:none">
   <div class="identity-box">
@@ -291,6 +308,7 @@ if('serviceWorker' in navigator){
     <div style="text-align:right">
       <div style="font-size:11px;color:rgba(240,217,138,.5);margin-bottom:4px">Playing as</div>
       <div id="meDisplay" style="font-size:13px;font-weight:600;color:var(--gold-lt);cursor:pointer" onclick="resetIdentity()">—</div>
+      <div style="margin-top:8px"><button onclick="openResetModal()" style="background:none;border:1px solid rgba(255,255,255,.12);color:rgba(255,255,255,.25);font-size:9px;padding:3px 8px;border-radius:6px;cursor:pointer;letter-spacing:.05em" title="Admin reset">⚙ Admin</button></div>
     </div>
   </div>
   <div class="hero-stats" id="heroStats">
@@ -466,7 +484,7 @@ function connectRealtime(){
 function handleRealtimeEvent(table, event, record, oldRecord){
   if(table === 'players' && record){
     const i = record.slot;
-    STATE.players[i] = {name: record.name, hi: parseFloat(record.hi), buyin: parseInt(record.buyin)};
+    STATE.players[i] = {name: PLAYER_NAMES[i], hi: parseFloat(record.hi), buyin: parseInt(record.buyin)};
     renderPlayers(); updateHero();
   }
   if(table === 'draws' && record){
@@ -499,10 +517,10 @@ function handleRealtimeEvent(table, event, record, oldRecord){
 // CONSTANTS
 // ═══════════════════════════════════════════════════════════
 const TEAMS = [
-  {id:0,name:'Blue',  color:'t1',players:[0,1]},
-  {id:1,name:'Teal',  color:'t2',players:[2,3]},
-  {id:2,name:'Amber', color:'t3',players:[4,5]},
-  {id:3,name:'Pink',  color:'t4',players:[6,7]},
+  {id:0,name:'Team 1',color:'t1',players:[0,1]},
+  {id:1,name:'Team 2',color:'t2',players:[2,3]},
+  {id:2,name:'Team 3',color:'t3',players:[4,5]},
+  {id:3,name:'Team 4',color:'t4',players:[6,7]},
 ];
 
 const ROUNDS = [
@@ -528,8 +546,10 @@ const COURSES = {
 // ═══════════════════════════════════════════════════════════
 // STATE
 // ═══════════════════════════════════════════════════════════
+const PLAYER_NAMES = ['Cody','Dan','Jesse','Ben','Jim','Mike','Stephen','Blair'];
+
 let STATE = {
-  players: Array(8).fill(null).map((_,i)=>({name:`Player ${i+1}`,hi:10,buyin:100})),
+  players: PLAYER_NAMES.map(name=>({name,hi:10,buyin:100})),
   draws:   Array(7).fill(null),
   scores:  Array(7).fill(null),
   results: Array(7).fill(null),
@@ -541,6 +561,8 @@ let ME = null; // {slot, name}
 let unreadChat = 0;
 let chatLoaded = false;
 let seenNotifIds = new Set();
+// Tracks the active (expanded +/−) hole per player per match: key="rndId-mkey-pi" → hole index
+let activeCells = {};
 
 // ═══════════════════════════════════════════════════════════
 // IDENTITY
@@ -643,7 +665,7 @@ async function loadAll(){
     ]);
 
     players.forEach(p=>{
-      STATE.players[p.slot] = {name:p.name, hi:parseFloat(p.hi), buyin:parseInt(p.buyin)};
+      STATE.players[p.slot] = {name:PLAYER_NAMES[p.slot], hi:parseFloat(p.hi), buyin:parseInt(p.buyin)};
     });
     draws.forEach(d=>{ STATE.draws[d.round_id] = d.pairs; });
     scores.forEach(s=>{ STATE.scores[s.round_id] = s.data; });
@@ -731,17 +753,16 @@ function showAlert(msg,type){
 function renderPlayers(){
   const el=document.getElementById('playerForms');
   const sharedBuyin = STATE.players[0]?.buyin || 100;
-  // Populate the group buyin field
   const gbEl = document.getElementById('groupBuyin');
   if(gbEl && !gbEl._dirty) gbEl.value = sharedBuyin;
   el.innerHTML=TEAMS.map(t=>`
     <div style="margin-bottom:18px">
-      <div class="section-title"><span class="chip chip-${t.color}">${t.name} Team</span> — Roommates</div>
+      <div class="section-title"><span class="chip chip-${t.color}">${t.name}</span></div>
       ${t.players.map(pi=>{
         const p=STATE.players[pi];
-        return `<div class="form-row" style="margin-bottom:10px">
-          <div><label>Player ${pi+1} Name</label><input type="text" id="pn${pi}" value="${p.name}" placeholder="Name"/></div>
-          <div><label>HI</label><input type="number" id="phi${pi}" value="${p.hi}" step="0.1" min="0" max="54"/></div>
+        return `<div class="form-row" style="margin-bottom:10px;grid-template-columns:1fr 120px">
+          <div style="display:flex;align-items:center;padding:8px 10px;background:var(--cream-dk);border-radius:8px;font-weight:600;font-size:14px">${p.name}</div>
+          <div><label>Handicap Index</label><input type="number" id="phi${pi}" value="${p.hi}" step="0.1" min="0" max="54"/></div>
         </div>`;
       }).join('')}
     </div>`).join('');
@@ -751,7 +772,7 @@ async function saveAllPlayers(){
   const updates = [];
   const sharedBuyin = parseFloat(document.getElementById('groupBuyin')?.value)||100;
   for(let i=0;i<8;i++){
-    const name = document.getElementById('pn'+i)?.value||`Player ${i+1}`;
+    const name = PLAYER_NAMES[i];
     const hi   = parseFloat(document.getElementById('phi'+i)?.value)||10;
     const buyin= sharedBuyin;
     STATE.players[i] = {name,hi,buyin};
@@ -1063,7 +1084,13 @@ async function saveNSResult(rndId){
 }
 
 // ── Score cell helper (match/BB scoring) ──
-// First tap sets par; +/− nudge from there; tap score to clear
+// First tap sets par; tap scored hole to activate (+/−); only one active per player at a time.
+function activateCell(rndId, mkey, pi, h){
+  const key = `${rndId}-${mkey}-${pi}`;
+  activeCells[key] = h;
+  renderMatchScoring(ROUNDS[rndId]);
+}
+
 function scoreCell(rndId, mkey, pi, h, grossVal, par, strokes, setFn){
   const g = parseInt(grossVal)||0;
   const rel = g ? g - par : null;
@@ -1076,17 +1103,31 @@ function scoreCell(rndId, mkey, pi, h, grossVal, par, strokes, setFn){
     else{relLabel=`+${rel}`;relClass='double';}
   }
   const strokeDot = strokes>0 ? `<span class="stroke-dot" style="margin-top:1px"></span>` : '';
+  const key = `${rndId}-${mkey}-${pi}`;
+  const isActive = activeCells[key] === h;
+
   if(!g){
-    // Empty — single tap sets par
+    // Empty — single tap sets par and activates this hole
     return `<div class="sc-cell">
-      <button class="sc-empty" onclick="${setFn}(${rndId},'${mkey}',${pi},${h},${par})" title="Tap to card par ${par}">${par}</button>
+      <button class="sc-empty" onclick="${setFn}(${rndId},'${mkey}',${pi},${h},${par});activeCells['${key}']=${h};" title="Tap to card par ${par}">${par}</button>
       ${strokeDot}
     </div>`;
   }
+  if(!isActive){
+    // Scored but not active — tap to expand +/−
+    return `<div class="sc-cell">
+      <div class="sc-score" onclick="activateCell(${rndId},'${mkey}',${pi},${h})" title="Tap to adjust">
+        <span class="sc-gross">${g}</span>
+        <span class="sc-rel ${relClass}">${relLabel}</span>
+      </div>
+      ${strokeDot}
+    </div>`;
+  }
+  // Active — show full +/− controls; tap score to clear
   return `<div class="sc-cell">
     <div class="sc-active">
       <button class="sc-btn" onclick="${setFn}(${rndId},'${mkey}',${pi},${h},${Math.max(1,g-1)})" title="Birdie / better">−</button>
-      <div class="sc-score" onclick="${setFn}(${rndId},'${mkey}',${pi},${h},0)" title="Tap to clear">
+      <div class="sc-score" onclick="${setFn}(${rndId},'${mkey}',${pi},${h},0);delete activeCells['${key}'];" title="Tap to clear">
         <span class="sc-gross">${g}</span>
         <span class="sc-rel ${relClass}">${relLabel}</span>
       </div>
@@ -1234,11 +1275,11 @@ function renderMatchCard(r,matchup,matchIdx,fmt,c){
         if(!aN.length||!bN.length) return `<td style="background:#f5f5f5"></td>`;
         const bestA=Math.min(...aN), bestB=Math.min(...bN);
         if(bestA<bestB) cumScore++; else if(bestB<bestA) cumScore--;
-        const label=cumScore===0?'AS':cumScore>0?`A${cumScore}`:`B${Math.abs(cumScore)}`;
+        const label=cumScore===0?'0':cumScore>0?`A${cumScore}`:`B${Math.abs(cumScore)}`;
         const cls=cumScore>0?'cell-won':cumScore<0?'cell-lost':'cell-halve';
         return `<td class="${cls}" style="font-size:10px;font-weight:700">${label}</td>`;
       }).join('');
-      const finalLabel=cumScore===0?'AS':cumScore>0?`A ${cumScore}UP`:`B ${Math.abs(cumScore)}UP`;
+      const finalLabel=cumScore===0?'0':cumScore>0?`A ${cumScore}UP`:`B ${Math.abs(cumScore)}UP`;
       const finalCls=cumScore>0?'cell-won':cumScore<0?'cell-lost':'cell-halve';
       const cumRow=`<tr style="border-top:2px solid var(--gold)">
         <td class="hi" style="font-size:10px">Match</td>
@@ -1267,7 +1308,7 @@ function renderMatchCard(r,matchup,matchIdx,fmt,c){
   const holeResRow=holeStatuses.map((s,h)=>{ if(!s)return`<td></td>`; return`<td class="${s==='A'?'cell-won':s==='B'?'cell-lost':'cell-halve'}">${s==='H'?'½':s==='A'?'✓':'✗'}</td>`; }).join('')+
     (fmt==='BB'
       ? `<td class="${statusClass}"><small>${holesPlayed?`${bbTotalA}/${bbTotalB}`:''}</small></td>`
-      : `<td class="${statusClass}"><small>${score>0?'+'+score:score<0?score:'AS'}</small></td>`);
+      : `<td class="${statusClass}"><small>${score>0?'+'+score:score<0?score:'0'}</small></td>`);
   // BB already has a cumulative "Match" row in inputRows — hide the redundant Result row for BB
   const resRow = fmt==='BB' ? '' :
     `<tr style="background:#f9f9f9" class="hole-res-row"><td class="hi" style="font-size:10px">Result</td>${holeResRow}</tr>`;
@@ -1313,6 +1354,9 @@ function setMatchScore(rndId,mkey,pi,hole,val){
   if(!STATE.scores[rndId].matches[mkey].gross[pi]) STATE.scores[rndId].matches[mkey].gross[pi]=Array(18).fill('');
   const intVal = parseInt(val)||0;
   STATE.scores[rndId].matches[mkey].gross[pi][hole] = intVal > 0 ? intVal : '';
+  // Advance active cell: if scoring (not clearing), move to next hole; if clearing, deactivate
+  const key = `${rndId}-${mkey}-${pi}`;
+  if(intVal > 0){ activeCells[key] = hole; } else { delete activeCells[key]; }
   pushScore(rndId);
   if(intVal && intVal !== prev) maybeFireNotif(rndId,pi,hole,intVal);
   renderMatchScoring(ROUNDS[rndId]);
@@ -1730,6 +1774,62 @@ function appendNotifFeed(n){
   el.prepend(div);
   // Keep feed to 20 items
   while(el.children.length>20) el.removeChild(el.lastChild);
+}
+
+// ═══════════════════════════════════════════════════════════
+// ADMIN RESET
+// ═══════════════════════════════════════════════════════════
+const ADMIN_PASSWORD = 'ireland2026';
+
+function openResetModal(){
+  document.getElementById('resetPwInput').value = '';
+  document.getElementById('resetError').style.display = 'none';
+  document.getElementById('resetOverlay').style.display = 'flex';
+  setTimeout(()=>document.getElementById('resetPwInput').focus(), 100);
+}
+
+function closeResetModal(){
+  document.getElementById('resetOverlay').style.display = 'none';
+}
+
+async function confirmReset(){
+  const pw = document.getElementById('resetPwInput').value;
+  if(pw !== ADMIN_PASSWORD){
+    document.getElementById('resetError').style.display = 'block';
+    document.getElementById('resetPwInput').value = '';
+    document.getElementById('resetPwInput').focus();
+    return;
+  }
+  closeResetModal();
+  showAlert('🔄 Resetting all data…', 'gold');
+
+  try{
+    // Delete all rows from each resettable table
+    await Promise.all([
+      sb('scores?round_id=gte.0',    {method:'DELETE', prefer:'return=minimal'}),
+      sb('results?round_id=gte.0',   {method:'DELETE', prefer:'return=minimal'}),
+      sb('draws?round_id=gte.0',     {method:'DELETE', prefer:'return=minimal'}),
+      sb('notifications?id=gte.0',   {method:'DELETE', prefer:'return=minimal'}),
+    ]);
+  }catch(e){
+    // Some tables might fail if empty — continue with local reset regardless
+  }
+
+  // Reset local STATE
+  STATE.scores   = Array(7).fill(null);
+  STATE.results  = Array(7).fill(null);
+  STATE.draws    = Array(7).fill(null);
+  STATE.drawLocks = Array(7).fill(false);
+  STATE.activeScoreRound = 0;
+  seenNotifIds = new Set();
+  saveLocal();
+
+  // Clear notifications feed UI
+  const feed = document.getElementById('notifFeed');
+  if(feed) feed.innerHTML = '';
+
+  renderAll();
+  showAlert('✅ All scores, results and draws have been reset.', 'green');
 }
 
 // ═══════════════════════════════════════════════════════════
