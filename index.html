@@ -133,21 +133,26 @@ input:focus{outline:none;border-color:var(--gold)}
 .hole-table tr:last-child td{border-bottom:none}
 .hole-table .hi{font-weight:700;color:var(--ink)}
 /* ── SCORE CELL ── */
-.sc-cell{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:36px}
+.sc-cell{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:44px;padding:3px 0}
 .sc-empty{width:34px;height:34px;border-radius:8px;border:1.5px dashed var(--cream-dkr);background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--ink-lt);font-weight:600;transition:all .15s;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
 .sc-empty:active,.sc-empty:hover{border-color:var(--gold);color:var(--gold-dk);background:rgba(201,168,76,.08)}
 .sc-active{display:flex;align-items:center;gap:2px}
 .sc-btn{width:26px;height:34px;border:none;border-radius:6px;background:var(--cream-dk);color:var(--ink-md);font-size:16px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;-webkit-tap-highlight-color:transparent;touch-action:manipulation;transition:all .12s}
 .sc-btn:active{background:var(--gold);color:#fff}
-.sc-score{min-width:30px;height:34px;border-radius:6px;border:1.5px solid var(--cream-dkr);background:#fff;display:flex;align-items:center;justify-content:center;flex-direction:column;cursor:pointer;transition:all .12s;-webkit-tap-highlight-color:transparent}
-.sc-score:active{border-color:var(--lost);background:var(--lost-bg)}
+.sc-score{width:34px;height:34px;border-radius:6px;border:1.5px solid var(--cream-dkr);background:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .12s;-webkit-tap-highlight-color:transparent}
+.sc-score:active{opacity:.7}
 .sc-gross{font-size:14px;font-weight:800;line-height:1;color:var(--ink)}
-.sc-rel{font-size:9px;font-weight:700;line-height:1;margin-top:1px}
-.sc-rel.eagle{color:#1a6b8a}
-.sc-rel.birdie{color:var(--won)}
-.sc-rel.par{color:var(--ink-lt)}
-.sc-rel.bogey{color:#b05a00}
-.sc-rel.double{color:var(--lost)}
+/* scorecard shapes drawn around the score number */
+.sc-score.eagle{border-radius:50%;border:2.5px solid #1a6b8a;box-shadow:0 0 0 3px #fff,0 0 0 5px #1a6b8a}
+.sc-score.eagle .sc-gross{color:#1a6b8a}
+.sc-score.birdie{border-radius:50%;border:2px solid var(--won)}
+.sc-score.birdie .sc-gross{color:var(--won)}
+.sc-score.par{border-radius:6px;border:1.5px solid var(--cream-dkr)}
+.sc-score.par .sc-gross{color:var(--ink)}
+.sc-score.bogey{border-radius:3px;border:2px solid #b05a00}
+.sc-score.bogey .sc-gross{color:#b05a00}
+.sc-score.double{border-radius:3px;border:2.5px solid var(--lost);box-shadow:0 0 0 3px #fff,0 0 0 5px var(--lost)}
+.sc-score.double .sc-gross{color:var(--lost)}
 /* legacy stepper — kept for NS scorecard which still uses it */
 .stepper{display:inline-flex;flex-direction:column;align-items:center;gap:2px}
 .stepper-input{width:32px;padding:2px 0;border:1.5px solid var(--cream-dkr);border-radius:5px;text-align:center;font-size:14px;font-weight:700;color:var(--ink);background:#fff;-moz-appearance:textfield}
@@ -1182,13 +1187,13 @@ function activateCell(rndId, mkey, pi, h){
 function scoreCell(rndId, mkey, pi, h, grossVal, par, strokes, setFn){
   const g = parseInt(grossVal)||0;
   const rel = g ? g - par : null;
-  let relLabel='', relClass='par';
+  let relClass='par';
   if(rel!==null){
-    if(rel<=-2){relLabel='Eagle';relClass='eagle';}
-    else if(rel===-1){relLabel='Birdie';relClass='birdie';}
-    else if(rel===0){relLabel='Par';relClass='par';}
-    else if(rel===1){relLabel='+1';relClass='bogey';}
-    else{relLabel=`+${rel}`;relClass='double';}
+    if(rel<=-2) relClass='eagle';
+    else if(rel===-1) relClass='birdie';
+    else if(rel===0) relClass='par';
+    else if(rel===1) relClass='bogey';
+    else relClass='double';
   }
   const strokeDot = strokes>0 ? `<span class="stroke-dot" style="margin-top:1px"></span>` : '';
   const key = `${rndId}-${mkey}-${pi}`;
@@ -1204,9 +1209,8 @@ function scoreCell(rndId, mkey, pi, h, grossVal, par, strokes, setFn){
   if(!isActive){
     // Scored but not active — tap to expand +/−
     return `<div class="sc-cell">
-      <div class="sc-score" onclick="activateCell(${rndId},'${mkey}',${pi},${h})" title="Tap to adjust">
+      <div class="sc-score ${relClass}" onclick="activateCell(${rndId},'${mkey}',${pi},${h})" title="Tap to adjust">
         <span class="sc-gross">${g}</span>
-        <span class="sc-rel ${relClass}">${relLabel}</span>
       </div>
       ${strokeDot}
     </div>`;
@@ -1215,9 +1219,8 @@ function scoreCell(rndId, mkey, pi, h, grossVal, par, strokes, setFn){
   return `<div class="sc-cell">
     <div class="sc-active">
       <button class="sc-btn" onclick="${setFn}(${rndId},'${mkey}',${pi},${h},${Math.max(1,g-1)})" title="Birdie / better">−</button>
-      <div class="sc-score" onclick="${setFn}(${rndId},'${mkey}',${pi},${h},0);delete activeCells['${key}'];" title="Tap to clear">
+      <div class="sc-score ${relClass}" onclick="${setFn}(${rndId},'${mkey}',${pi},${h},0);delete activeCells['${key}'];" title="Tap to clear">
         <span class="sc-gross">${g}</span>
-        <span class="sc-rel ${relClass}">${relLabel}</span>
       </div>
       <button class="sc-btn" onclick="${setFn}(${rndId},'${mkey}',${pi},${h},${g+1})" title="Bogey / worse">+</button>
     </div>
