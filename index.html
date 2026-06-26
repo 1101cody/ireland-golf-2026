@@ -357,6 +357,7 @@ if('serviceWorker' in navigator){
   <button class="tab" onclick="showPage('schedule',this)">Schedule</button>
   <button class="tab" onclick="showPage('players',this)">Players</button>
   <button class="tab" onclick="showPage('scores',this)">Scores</button>
+  <button class="tab" onclick="showPage('scoreboard',this)">Scoreboard</button>
   <button class="tab" onclick="showPage('skins',this)">Skins</button>
   <button class="tab" onclick="showPage('settlement',this)">Money</button>
   <button class="tab" onclick="showPage('chat',this)" id="chatTab">Chat <span class="badge" id="chatBadge" style="display:none">0</span></button>
@@ -410,6 +411,19 @@ if('serviceWorker' in navigator){
 <div class="page" id="page-scores">
   <div class="score-round-sel" id="roundSelBtns"></div>
   <div id="scoreContent"></div>
+</div>
+
+<!-- SCOREBOARD -->
+<div class="page" id="page-scoreboard">
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center">
+    <div class="score-round-sel" id="sbRoundBtns" style="margin-bottom:0;flex:1"></div>
+    <button class="btn btn-outline btn-sm" id="sbTripBtn" onclick="toggleSbTrip()" style="white-space:nowrap">🌍 Trip Total</button>
+  </div>
+  <div style="display:flex;gap:6px;margin-bottom:14px">
+    <button class="btn btn-sm" id="sbSortGross" onclick="setSbSort('gross')" style="background:var(--green);color:var(--gold-lt);flex:1">Low Gross</button>
+    <button class="btn btn-sm btn-outline" id="sbSortNet" onclick="setSbSort('net')" style="flex:1">Low Net</button>
+  </div>
+  <div id="sbContent"></div>
 </div>
 
 <!-- SKINS -->
@@ -730,7 +744,7 @@ async function loadAll(){
 
 function renderAll(){
   renderPlayers(); renderSchedule(); renderStandings(); renderScores();
-  renderSkins(); renderSettlement(); updateHero();
+  renderSkins(); renderSettlement(); renderScoreboard(); updateHero();
   if(ME){
     document.getElementById('meDisplay').textContent = ME.name + ' ✏️';
     // Update name in case it changed
@@ -774,6 +788,7 @@ function showPage(id, btn){
   if(id==='scores') renderScores();
   if(id==='skins') renderSkins();
   if(id==='settlement') renderSettlement();
+  if(id==='scoreboard') renderScoreboard();
 }
 
 function showAlert(msg,type){
@@ -1066,7 +1081,10 @@ function renderNetStroke(r){
   const el=document.getElementById('scoreContent');
   const c=COURSES[r.course];
   if(!STATE.scores[r.id]) STATE.scores[r.id]={gross:{}};
+  // Logged-in player floats to top
   const allPlayers=[0,1,2,3,4,5,6,7];
+  const meSlot = ME ? ME.slot : -1;
+  allPlayers.sort((a,b)=>{ if(a===meSlot)return -1; if(b===meSlot)return 1; return a-b; });
   const chcps=allPlayers.map(pi=>courseHcp(STATE.players[pi].hi,r.slope,r.rating,r.par));
   const pars=c.pars,sis=c.si,holeCount=pars.length;
   const frontPar=pars.slice(0,9).reduce((a,b)=>a+b,0);
@@ -1105,6 +1123,7 @@ function renderNetStroke(r){
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
             <span class="chip chip-${t.color}">${t.name}</span>
             <strong>${p.name}</strong>
+            ${pi===meSlot?`<span style="background:var(--gold);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px">YOU</span>`:''}
             <span style="font-size:11px;color:var(--ink-lt)">HCP ${chcp}</span>
             ${holesIn>0?`<span class="net-score">Net: ${netTotal} (${holesIn} holes)</span>`:''}
           </div>
@@ -1685,30 +1704,22 @@ function renderSkins(){
       return g - strokesOnHole(chcps[pi], c.si[h]);
     }
 
-    // Skins calculation
-    let carryover = 0;
+    // Skins calculation — every hole pays out, ties split the skin
     const roundSkins = [];
-    const skinWins = {}; // pi -> count of skins won
+    const skinWins = {}; // pi -> fractional skins won
     inPlayers.forEach(pi => skinWins[pi] = 0);
 
     if(inPlayers.length > 0){
       c.pars.forEach((_,h) => {
         const nets = inPlayers.map(pi=>({pi, n:getNet(pi,h)})).filter(x=>x.n!==null);
-        carryover++;
         if(!nets.length) return;
         const minNet = Math.min(...nets.map(x=>x.n));
         const winners = nets.filter(x=>x.n===minNet);
-        if(winners.length===1){
-          totalSkinsWon++;
-          roundSkins.push({h, winner:winners[0].pi, val:carryover, net:minNet});
-          skinWins[winners[0].pi] = (skinWins[winners[0].pi]||0) + carryover;
-          carryover = 0;
-        }
+        const share = 1 / winners.length;
+        winners.forEach(w => { skinWins[w.pi] = (skinWins[w.pi]||0) + share; });
+        roundSkins.push({h, winners: winners.map(x=>x.pi), share, net: minNet, tied: winners.length > 1});
       });
     }
-
-    // Carryover remaining (not yet won)
-    const carryoverVal = carryover > 0 ? carryover : 0;
 
     // Build opt-in grid
     const roundLocked = STATE.roundLocks[r.id];
@@ -1724,34 +1735,32 @@ function renderSkins(){
     }).join('');
 
     // Build pot summary pills
+    const totalSkinsFrac = inPlayers.reduce((a,pi)=>a+(skinWins[pi]||0), 0);
     const potPills = inPlayers.length > 0
       ? inPlayers.map(pi => {
           const won = skinWins[pi] || 0;
-          const paid = stake;
-          const earned = stake > 0 ? won * (pot / (roundSkins.reduce((a,s)=>a+s.val,0)||1)) : 0;
-          return `<span class="skins-pot-pill"><strong>${playerName(pi).split(' ')[0]}</strong> ${won} skin${won!==1?'s':''}</span>`;
+          const wonFmt = won % 1 === 0 ? won : won.toFixed(1);
+          return `<span class="skins-pot-pill"><strong>${playerName(pi).split(' ')[0]}</strong> ${wonFmt} skin${won!==1?'s':''}</span>`;
         }).join('')
       : '<span style="font-size:12px;color:var(--ink-lt);padding:4px 0">No one opted in yet</span>';
 
     // Skin results rows
-    const skinRows = roundSkins.map(s =>
-      `<div class="skin-row">
+    const skinRows = roundSkins.map(s => {
+      const winnerNames = s.winners.map(pi =>
+        `<span class="chip chip-${playerTeam(pi).color}" style="font-size:10px">${playerName(pi).split(' ')[0]}</span>`
+      ).join(' ');
+      const shareAmt = stake > 0 ? (s.share * pot / (roundSkins.length)).toFixed(2) : '';
+      const valFmt = s.share < 1 ? `½ each` : `×1`;
+      return `<div class="skin-row">
         <span class="skin-hole">H${s.h+1}</span>
-        <span><span class="chip chip-${playerTeam(s.winner).color}" style="font-size:10px">${playerName(s.winner).split(' ')[0]}</span> <span style="font-size:11px;color:var(--ink-lt)">net ${s.net}</span></span>
-        <span class="skin-val">💰 ×${s.val}${stake>0?` = CA$${(s.val*stake).toFixed(0)}`:''}${carryoverVal>0&&s===roundSkins[roundSkins.length-1]?'':''}</span>
-      </div>`
-    ).join('');
+        <span>${winnerNames} <span style="font-size:11px;color:var(--ink-lt)">net ${s.net}</span>${s.tied?' <span style="font-size:10px;color:var(--halve)">(split)</span>':''}</span>
+        <span class="skin-val">💰 ${valFmt}${stake>0?` CA$${(s.share*stake).toFixed(2)}`:''}
+        </span>
+      </div>`;
+    }).join('');
 
     const noScores = inPlayers.length > 0 && roundSkins.length === 0
       ? `<div style="padding:12px 14px;font-size:12px;color:var(--ink-lt)">Scores not yet entered for opted-in players.</div>`
-      : '';
-
-    const carryoverRow = carryoverVal > 0
-      ? `<div class="skin-row" style="background:rgba(201,168,76,.06)">
-          <span class="skin-hole" style="color:var(--gold-dk)">→</span>
-          <span style="font-size:12px;color:var(--ink-lt)">${carryoverVal} hole${carryoverVal!==1?'s':''} carrying over</span>
-          <span style="font-size:12px;color:var(--gold-dk);font-weight:700">${stake>0?`CA$${(carryoverVal*stake).toFixed(0)} at stake`:''}</span>
-        </div>`
       : '';
 
     html += `
@@ -1772,12 +1781,218 @@ function renderSkins(){
       <div class="skins-optin-grid">${optGrid}</div>
       ${inPlayers.length>0?`<div class="skins-pot-summary">${potPills}</div>`:''}
       <div class="skins-results">
-        ${skinRows}${noScores}${carryoverRow}
+        ${skinRows}${noScores}
       </div>
     </div>`;
   });
 
   el.innerHTML = html;
+}
+
+// ═══════════════════════════════════════════════════════════
+// SCOREBOARD
+// ═══════════════════════════════════════════════════════════
+let sbSort = 'gross';
+let sbRound = 0;
+let sbTrip = false;
+
+function setSbSort(s){ sbSort=s; renderScoreboard(); }
+function toggleSbTrip(){ sbTrip=!sbTrip; renderScoreboard(); }
+
+function getPlayerRoundScores(pi, rndId){
+  const r = ROUNDS[rndId], c = COURSES[r.course];
+  const chcp = courseHcp(STATE.players[pi].hi, r.slope, r.rating, r.par);
+  let gross=0, net=0, holes=0;
+  const scores = STATE.scores[rndId];
+  if(!scores) return null;
+  c.pars.forEach((_,h)=>{
+    let g = null;
+    if(r.format==='NS'){ g = parseInt(scores.gross?.[pi]?.[h])||0; }
+    else if(scores.matches){
+      for(const m of Object.values(scores.matches)){
+        if(m.gross?.[pi]?.[h]!==undefined){ const v=parseInt(m.gross[pi][h]); if(v>0){g=v;break;} }
+      }
+    }
+    if(g){ gross+=g; net+=g-strokesOnHole(chcp,c.si[h]); holes++; }
+  });
+  if(!holes) return null;
+  const parTotal = c.pars.slice(0,holes).reduce((a,b)=>a+b,0); // approximate — full 18 when complete
+  const parFull = c.pars.reduce((a,b)=>a+b,0);
+  return {gross, net, holes, chcp, grossToPar: gross - parFull, netToPar: net - parFull};
+}
+
+function renderScoreboard(){
+  // Round selector buttons
+  const btnEl = document.getElementById('sbRoundBtns');
+  if(!btnEl) return;
+  btnEl.innerHTML = ROUNDS.map(r=>`
+    <button class="rnd-sel-btn ${!sbTrip&&sbRound===r.id?'active':''}" onclick="sbTrip=false;sbRound=${r.id};renderScoreboard()">
+      R${r.num}
+    </button>`).join('');
+
+  // Sort buttons
+  document.getElementById('sbSortGross').style.background = sbSort==='gross'?'var(--green)':'';
+  document.getElementById('sbSortGross').style.color = sbSort==='gross'?'var(--gold-lt)':'';
+  document.getElementById('sbSortGross').className = sbSort==='gross'?'btn btn-sm btn-green':'btn btn-sm btn-outline';
+  document.getElementById('sbSortNet').className = sbSort==='net'?'btn btn-sm btn-green':'btn btn-sm btn-outline';
+  document.getElementById('sbSortNet').style.background = sbSort==='net'?'var(--green)':'';
+  document.getElementById('sbSortNet').style.color = sbSort==='net'?'var(--gold-lt)':'';
+
+  // Trip total button highlight
+  document.getElementById('sbTripBtn').style.background = sbTrip?'var(--green)':'';
+  document.getElementById('sbTripBtn').style.color = sbTrip?'var(--gold-lt)':'';
+  document.getElementById('sbTripBtn').style.borderColor = sbTrip?'var(--green)':'';
+
+  const el = document.getElementById('sbContent');
+  if(!el) return;
+
+  if(sbTrip){
+    renderSbTrip(el);
+  } else {
+    renderSbRound(el, sbRound);
+  }
+}
+
+function renderSbRound(el, rndId){
+  const r = ROUNDS[rndId];
+  const c = COURSES[r.course];
+  const parFull = c.pars.reduce((a,b)=>a+b,0);
+  const meSlot = ME ? ME.slot : -1;
+
+  const rows = [0,1,2,3,4,5,6,7].map(pi=>{
+    const s = getPlayerRoundScores(pi, rndId);
+    return {pi, ...( s || {gross:null,net:null,holes:0,chcp:courseHcp(STATE.players[pi].hi,r.slope,r.rating,r.par),grossToPar:null,netToPar:null})};
+  });
+
+  const hasScores = rows.some(x=>x.gross!==null);
+
+  rows.sort((a,b)=>{
+    const av = sbSort==='gross'?a.gross:a.net;
+    const bv = sbSort==='gross'?b.gross:b.net;
+    if(av===null&&bv===null) return 0;
+    if(av===null) return 1;
+    if(bv===null) return -1;
+    return av-bv;
+  });
+
+  const fmtToPar = v => v===null?'—': v===0?'E': v>0?'+'+v:''+v;
+  const toParColor = v => v===null?'var(--ink-lt)': v<0?'var(--won)': v>0?'var(--lost)':'var(--ink)';
+
+  el.innerHTML = `
+  <div class="card">
+    <div class="card-head">
+      <span class="card-title">R${r.num} · ${r.course}</span>
+      <span style="font-size:11px;color:var(--ink-lt)">${r.date} · Par ${parFull} · ${r.label}</span>
+    </div>
+    ${hasScores ? `
+    <table class="hole-table" style="width:100%">
+      <thead>
+        <tr>
+          <th style="text-align:left;padding-left:12px">Player</th>
+          <th>HCP</th>
+          <th>Gross</th>
+          <th style="color:var(--gold-lt)">+/−</th>
+          <th>Net</th>
+          <th style="color:var(--gold-lt)">+/−</th>
+          <th>Holes</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.map((row,i)=>{
+          const t = playerTeam(row.pi);
+          const isMe = row.pi === meSlot;
+          const grossColor = toParColor(row.grossToPar);
+          const netColor = toParColor(row.netToPar);
+          return `<tr style="${isMe?'background:rgba(201,168,76,.08);font-weight:700':''}">
+            <td style="text-align:left;padding-left:12px;white-space:nowrap">
+              <span class="chip chip-${t.color}" style="font-size:9px">${t.name}</span>
+              ${playerName(row.pi)}
+              ${isMe?`<span style="background:var(--gold);color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:8px;margin-left:3px">YOU</span>`:''}
+            </td>
+            <td>${row.chcp}</td>
+            <td style="font-weight:700">${row.gross??'—'}</td>
+            <td style="color:${grossColor};font-weight:700">${fmtToPar(row.grossToPar)}</td>
+            <td style="font-weight:700">${row.net??'—'}</td>
+            <td style="color:${netColor};font-weight:700">${fmtToPar(row.netToPar)}</td>
+            <td style="color:var(--ink-lt)">${row.holes||'—'}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>` : `<div class="empty-state" style="padding:32px">No scores entered yet for Round ${r.num}.</div>`}
+  </div>`;
+}
+
+function renderSbTrip(el){
+  const meSlot = ME ? ME.slot : -1;
+
+  const rows = [0,1,2,3,4,5,6,7].map(pi=>{
+    let totalGross=0, totalNet=0, totalGrossToPar=0, totalNetToPar=0, roundsPlayed=0;
+    ROUNDS.forEach(r=>{
+      const s = getPlayerRoundScores(pi, r.id);
+      if(s && s.holes===18){
+        totalGross += s.gross;
+        totalNet += s.net;
+        totalGrossToPar += s.grossToPar;
+        totalNetToPar += s.netToPar;
+        roundsPlayed++;
+      }
+    });
+    return {pi, totalGross: roundsPlayed?totalGross:null, totalNet: roundsPlayed?totalNet:null,
+            totalGrossToPar: roundsPlayed?totalGrossToPar:null, totalNetToPar: roundsPlayed?totalNetToPar:null, roundsPlayed};
+  });
+
+  rows.sort((a,b)=>{
+    const av = sbSort==='gross'?a.totalGrossToPar:a.totalNetToPar;
+    const bv = sbSort==='gross'?b.totalGrossToPar:b.totalNetToPar;
+    if(av===null&&bv===null) return 0;
+    if(av===null) return 1;
+    if(bv===null) return -1;
+    return av-bv;
+  });
+
+  const fmtToPar = v => v===null?'—': v===0?'E': v>0?'+'+v:''+v;
+  const toParColor = v => v===null?'var(--ink-lt)': v<0?'var(--won)': v>0?'var(--lost)':'var(--ink)';
+
+  const hasAny = rows.some(x=>x.roundsPlayed>0);
+
+  el.innerHTML = `
+  <div class="card">
+    <div class="card-head">
+      <span class="card-title">🌍 Trip Total — All Rounds</span>
+      <span style="font-size:11px;color:var(--ink-lt)">Completed 18-hole rounds only</span>
+    </div>
+    ${hasAny ? `
+    <table class="hole-table" style="width:100%">
+      <thead>
+        <tr>
+          <th style="text-align:left;padding-left:12px">Player</th>
+          <th>Rnds</th>
+          <th>Gross</th>
+          <th style="color:var(--gold-lt)">+/− G</th>
+          <th>Net</th>
+          <th style="color:var(--gold-lt)">+/− N</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.map((row,i)=>{
+          const t = playerTeam(row.pi);
+          const isMe = row.pi === meSlot;
+          return `<tr style="${isMe?'background:rgba(201,168,76,.08);font-weight:700':''}">
+            <td style="text-align:left;padding-left:12px;white-space:nowrap">
+              <span class="chip chip-${t.color}" style="font-size:9px">${t.name}</span>
+              ${playerName(row.pi)}
+              ${isMe?`<span style="background:var(--gold);color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:8px;margin-left:3px">YOU</span>`:''}
+            </td>
+            <td>${row.roundsPlayed||'—'}</td>
+            <td style="font-weight:700">${row.totalGross??'—'}</td>
+            <td style="color:${toParColor(row.totalGrossToPar)};font-weight:700">${fmtToPar(row.totalGrossToPar)}</td>
+            <td style="font-weight:700">${row.totalNet??'—'}</td>
+            <td style="color:${toParColor(row.totalNetToPar)};font-weight:700">${fmtToPar(row.totalNetToPar)}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>` : `<div class="empty-state" style="padding:32px">No completed rounds yet.</div>`}
+  </div>`;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1817,19 +2032,18 @@ function renderSettlement(){
     const roundSkins = [];
     c.pars.forEach((_,h) => {
       const nets = inPlayers.map(pi=>({pi, n:getNet(pi,h)})).filter(x=>x.n!==null);
-      carryover++;
       if(!nets.length) return;
       const minNet = Math.min(...nets.map(x=>x.n));
       const winners = nets.filter(x=>x.n===minNet);
-      if(winners.length===1){ roundSkins.push({winner:winners[0].pi, val:carryover}); carryover=0; }
+      const share = 1 / winners.length;
+      winners.forEach(w => roundSkins.push({winner: w.pi, share}));
     });
 
-    const totalSkins = roundSkins.reduce((a,s)=>a+s.val, 0);
+    const totalShares = roundSkins.reduce((a,s)=>a+s.share, 0);
     const pot = inPlayers.length * stake;
-    // Each player paid stake to enter; winners get (val / totalSkins) * pot
     inPlayers.forEach(pi => { skinsNet[pi] -= stake; });
-    if(totalSkins > 0){
-      roundSkins.forEach(s => { skinsNet[s.winner] += (s.val / totalSkins) * pot; });
+    if(totalShares > 0){
+      roundSkins.forEach(s => { skinsNet[s.winner] += (s.share / totalShares) * pot; });
     }
   });
 
