@@ -1074,28 +1074,81 @@ function renderMatchCard(r,matchup,matchIdx,fmt,c){
   const teamNames=side=>{ const pair=side==='A'?pairA:pairB; return pair.map(pi=>`<span class="chip chip-${playerTeam(pi).color}">${playerName(pi)}</span>`).join(' '); };
   const savedResult=STATE.results[r.id]?.matches?.[mkey];
 
+  // ── Best Ball input rows + team summary rows ──
   const inputRows=fmt==='BB'?
-    [...pairA,...pairB].map(pi=>{
-      const grossRow=gross[pi];
-      let runningTotal=0;
-      const cells=pars.map((_,h)=>{
-        const g=grossRow[h]||'',st=strokesOnHole(chcps[pi],sis[h]);
-        const gInt=parseInt(g)||0;
-        if(gInt) runningTotal+=gInt-st;
-        return `<td><div class="stepper">
-          <button class="stepper-btn" onclick="setMatchScore(${r.id},'${mkey}',${pi},${h},(parseInt('${g}')||0)+1)">+</button>
-          <input class="stepper-input" type="number" min="1" max="15" value="${g}" placeholder="${pars[h]}"
-            onchange="if(this.value)setMatchScore(${r.id},'${mkey}',${pi},${h},this.value)"
-            oninput="if(this.value&&this.value.length<=2)setMatchScore(${r.id},'${mkey}',${pi},${h},this.value)"/>
-          <button class="stepper-btn" onclick="setMatchScore(${r.id},'${mkey}',${pi},${h},Math.max(1,(parseInt('${g}')||0)-1))">−</button>
-        </div>${st?`<span class="stroke-dot"></span>`:''}</td>`;
+    (()=>{
+      // Individual input rows
+      const playerRows=[...pairA,...pairB].map(pi=>{
+        const grossRow=gross[pi];
+        let runningNet=0;
+        const cells=pars.map((_,h)=>{
+          const g=grossRow[h]||'',st=strokesOnHole(chcps[pi],sis[h]);
+          const gInt=parseInt(g)||0;
+          if(gInt) runningNet+=gInt-st;
+          return `<td><div class="stepper">
+            <button class="stepper-btn" onclick="setMatchScore(${r.id},'${mkey}',${pi},${h},(parseInt('${g}')||0)+1)">+</button>
+            <input class="stepper-input" type="number" min="1" max="15" value="${g}" placeholder="${pars[h]}"
+              onchange="if(this.value)setMatchScore(${r.id},'${mkey}',${pi},${h},this.value)"
+              oninput="if(this.value&&this.value.length<=2)setMatchScore(${r.id},'${mkey}',${pi},${h},this.value)"/>
+            <button class="stepper-btn" onclick="setMatchScore(${r.id},'${mkey}',${pi},${h},Math.max(1,(parseInt('${g}')||0)-1))">−</button>
+          </div>${st?`<span class="stroke-dot"></span>`:''}</td>`;
+        }).join('');
+        return `<tr>
+          <td class="hi" style="font-size:11px">${playerName(pi).split(' ')[0]} <span class="chip chip-${playerTeam(pi).color}" style="font-size:9px">${pairA.includes(pi)?'A':'B'}</span></td>
+          ${cells}
+          <td class="net-score" style="min-width:38px;font-size:12px">${runningNet||''}</td>
+        </tr>`;
       }).join('');
-      return `<tr>
-        <td class="hi">${playerName(pi).split(' ')[0]} <span class="chip chip-${playerTeam(pi).color}" style="font-size:9px">${pairA.includes(pi)?'A':'B'}</span></td>
-        ${cells}
-        <td class="net-score" style="min-width:36px">${runningTotal||''}</td>
+
+      // Team best-ball summary rows (one per side)
+      function bbTeamRow(pair, side){
+        let teamTotal=0, matchScore=0;
+        const oppPair = side==='A'?pairB:pairA;
+        const teamCells=pars.map((_,h)=>{
+          const myNets=pair.map(pi=>netH(pi,h)).filter(x=>x!==null);
+          const oppNets=oppPair.map(pi=>netH(pi,h)).filter(x=>x!==null);
+          if(!myNets.length) return `<td style="background:#f5f5f5"></td>`;
+          const best=Math.min(...myNets);
+          teamTotal+=best;
+          // hole win/loss for match score display
+          if(oppNets.length){
+            const oppBest=Math.min(...oppNets);
+            if(best<oppBest) matchScore++; else if(oppBest<best) matchScore--;
+          }
+          const oppBest=oppNets.length?Math.min(...oppNets):null;
+          const cls=oppBest===null?'':(best<oppBest?'cell-won':best>oppBest?'cell-lost':'cell-halve');
+          return `<td class="${cls}" style="font-weight:700">${best}</td>`;
+        }).join('');
+        const teamLabel=pair.map(pi=>`<span class="chip chip-${playerTeam(pi).color}" style="font-size:9px">${playerName(pi).split(' ')[0]}</span>`).join('+');
+        return `<tr style="background:${side==='A'?'rgba(30,58,138,0.07)':'rgba(6,78,59,0.07)'}">
+          <td class="hi" style="font-size:10px;white-space:nowrap">Best ${side} ${teamLabel}</td>
+          ${teamCells}
+          <td class="net-score" style="min-width:38px;font-size:13px;font-weight:800">${teamTotal||''}</td>
+        </tr>`;
+      }
+
+      // Running match score row (cumulative hole-by-hole)
+      let cumScore=0;
+      const cumCells=pars.map((_,h)=>{
+        const aN=pairA.map(pi=>netH(pi,h)).filter(x=>x!==null);
+        const bN=pairB.map(pi=>netH(pi,h)).filter(x=>x!==null);
+        if(!aN.length||!bN.length) return `<td style="background:#f5f5f5"></td>`;
+        const bestA=Math.min(...aN), bestB=Math.min(...bN);
+        if(bestA<bestB) cumScore++; else if(bestB<bestA) cumScore--;
+        const label=cumScore===0?'AS':cumScore>0?`A${cumScore}`:`B${Math.abs(cumScore)}`;
+        const cls=cumScore>0?'cell-won':cumScore<0?'cell-lost':'cell-halve';
+        return `<td class="${cls}" style="font-size:10px;font-weight:700">${label}</td>`;
+      }).join('');
+      const finalLabel=cumScore===0?'AS':cumScore>0?`A ${cumScore}UP`:`B ${Math.abs(cumScore)}UP`;
+      const finalCls=cumScore>0?'cell-won':cumScore<0?'cell-lost':'cell-halve';
+      const cumRow=`<tr style="border-top:2px solid var(--gold)">
+        <td class="hi" style="font-size:10px">Match</td>
+        ${cumCells}
+        <td class="${finalCls}" style="font-size:11px;font-weight:800;min-width:38px">${bbTotalA||bbTotalB?finalLabel:''}</td>
       </tr>`;
-    }).join(''):
+
+      return playerRows + bbTeamRow(pairA,'A') + bbTeamRow(pairB,'B') + cumRow;
+    })():
     [pairA[0],pairB[0]].map(pi=>{
       const grossRow=gross[pi];
       let runningNet=0;
@@ -1138,7 +1191,7 @@ function renderMatchCard(r,matchup,matchIdx,fmt,c){
       <div style="overflow-x:auto">
       <table class="hole-table">
         <thead>
-          <tr><th>Player</th>${pars.map((_,h)=>`<th>${h+1}</th>`).join('')}<th>Total</th></tr>
+          <tr><th>Player</th>${pars.map((_,h)=>`<th>${h+1}</th>`).join('')}<th>Net</th></tr>
           <tr style="background:rgba(201,168,76,.12)"><th>Par</th>${pars.map(p=>`<th>${p}</th>`).join('')}<th></th></tr>
           <tr style="background:rgba(0,0,0,.04)"><th>SI</th>${sis.map(s=>`<th>${s}</th>`).join('')}<th></th></tr>
         </thead>
