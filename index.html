@@ -203,6 +203,7 @@ input:focus{outline:none;border-color:var(--gold)}
 .notif-eagle{background:#fef9c3;border:1px solid var(--gold)}
 .notif-birdie{background:#d1fae5;border:1px solid #6ee7b7}
 .notif-bogey{background:#fee2e2;border:1px solid #fca5a5}
+.notif-disaster{background:#fce7f3;border:1.5px solid #f472b6}
 .notif-chat{background:var(--cream-dk);border:1px solid var(--cream-dkr)}
 .notif-icon{font-size:20px;flex-shrink:0}
 
@@ -1079,6 +1080,7 @@ async function maybeFireNotif(rndId, pi, hole, gross){
     if(diff <= -2) type = 'eagle';
     else if(diff === -1) type = 'birdie';
     else if(diff === 2) type = 'double_bogey';
+    else if(diff >= 3) type = 'disaster';
     if(!type) return;
     const pname = playerName(pi);
     try{
@@ -2140,7 +2142,7 @@ function appendChatMsg(msg){
   const time=new Date(msg.created_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
   const div=document.createElement('div');
   div.className=`chat-msg ${isMe?'mine':'theirs'}`;
-  div.innerHTML=`${!isMe?`<div class="who">${msg.player_name}</div>`:''}
+  div.innerHTML=`<div class="who">${msg.player_name}${isMe?' (you)':''}</div>
     <div>${msg.message}</div>
     <div class="time">${time}</div>`;
   el.appendChild(div);
@@ -2161,8 +2163,8 @@ async function sendChat(){
 // ═══════════════════════════════════════════════════════════
 // NOTIFICATIONS
 // ═══════════════════════════════════════════════════════════
-const NOTIF_ICONS={eagle:'🦅',birdie:'🐦',double_bogey:'😬',bogey:'👻'};
-const NOTIF_LABELS={eagle:'EAGLE!',birdie:'BIRDIE!',double_bogey:'Double Bogey',bogey:'Bogey'};
+const NOTIF_ICONS={eagle:'🦅',birdie:'🐦',double_bogey:'😬',bogey:'👻',disaster:'💩'};
+const NOTIF_LABELS={eagle:'EAGLE!',birdie:'BIRDIE!',double_bogey:'Double Bogey',bogey:'Bogey',disaster:'DISASTER!'};
 
 function showNotifToast(n){
   if(seenNotifIds.has(n.id)) return;
@@ -2178,17 +2180,33 @@ function showNotifToast(n){
 
 function appendNotifFeed(n){
   const el=document.getElementById('notifFeed');
-  const cls={eagle:'notif-eagle',birdie:'notif-birdie',double_bogey:'notif-bogey',bogey:'notif-bogey'}[n.type]||'notif-chat';
+  const cls={eagle:'notif-eagle',birdie:'notif-birdie',double_bogey:'notif-bogey',bogey:'notif-bogey',disaster:'notif-disaster'}[n.type]||'notif-chat';
   const icon=NOTIF_ICONS[n.type]||'⛳';
   const label=NOTIF_LABELS[n.type]||n.type;
   const time=new Date(n.created_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  const showReply = n.type==='birdie'||n.type==='eagle';
+  const replyText = n.type==='eagle'
+    ? `🦅 ${n.player_name} eagle on Hole ${n.hole}!`
+    : `🐦 ${n.player_name} birdie on Hole ${n.hole}!`;
   const div=document.createElement('div');
   div.className=`notif-item ${cls}`;
+  div.style.flexWrap='wrap';
   div.innerHTML=`<span class="notif-icon">${icon}</span>
-    <span><strong>${n.player_name}</strong> ${label} — Hole ${n.hole}, R${n.round_id+1} <span style="font-size:10px;color:var(--ink-lt)">${time}</span></span>`;
+    <span style="flex:1"><strong>${n.player_name}</strong> ${label} — Hole ${n.hole}, R${n.round_id+1} <span style="font-size:10px;color:var(--ink-lt)">${time}</span></span>
+    ${showReply?`<button onclick="replyToBirdie(${JSON.stringify(replyText)})" style="margin-top:4px;padding:3px 10px;border-radius:20px;border:1.5px solid var(--green-lt);background:transparent;color:var(--green);font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">💬 Reply</button>`:''}`;
   el.prepend(div);
   // Keep feed to 20 items
   while(el.children.length>20) el.removeChild(el.lastChild);
+}
+
+function replyToBirdie(prefill){
+  // Switch to chat tab and pre-fill the input
+  const chatTabBtn = document.querySelector('.tab[onclick*="chat"]');
+  showPage('chat', chatTabBtn);
+  const input = document.getElementById('chatInput');
+  input.value = prefill + ' ';
+  input.focus();
+  input.setSelectionRange(input.value.length, input.value.length);
 }
 
 // ═══════════════════════════════════════════════════════════
