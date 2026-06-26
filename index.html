@@ -157,6 +157,7 @@ input:focus{outline:none;border-color:var(--gold)}
 .settle-row{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid var(--cream-dk)}
 .settle-row:last-child{border-bottom:none}
 .settle-pos{font-size:20px;font-family:'Playfair Display',serif;color:var(--won);font-weight:700}
+.settle-neg{font-size:20px;font-family:'Playfair Display',serif;color:var(--lost);font-weight:700}
 
 /* ── CHAT ── */
 .chat-wrap{display:flex;flex-direction:column;height:calc(100vh - 280px);min-height:300px}
@@ -207,6 +208,27 @@ input:focus{outline:none;border-color:var(--gold)}
 .player-pick-btn{width:100%;padding:10px 14px;margin-bottom:8px;border-radius:10px;border:1.5px solid var(--cream-dkr);background:#fff;text-align:left;font-size:14px;font-weight:600;cursor:pointer;transition:all .15s;display:flex;align-items:center;gap:8px}
 .player-pick-btn:hover{border-color:var(--gold);background:var(--cream)}
 .player-pick-btn.taken{opacity:.4;cursor:not-allowed}
+
+/* ── SKINS OPT-IN ── */
+.skins-round-block{border:1px solid var(--cream-dkr);border-radius:10px;margin-bottom:14px;overflow:hidden}
+.skins-round-head{background:var(--cream-dk);padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.skins-round-title{font-family:'Playfair Display',serif;font-size:15px;color:var(--green)}
+.skins-stake-row{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink-md)}
+.skins-stake-row input{width:64px;padding:4px 8px;border:1.5px solid var(--cream-dkr);border-radius:6px;font-size:12px;font-weight:700;color:var(--ink)}
+.skins-optin-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding:12px 14px}
+@media(max-width:480px){.skins-optin-grid{grid-template-columns:repeat(2,1fr)}}
+.skins-player-toggle{border:1.5px solid var(--cream-dkr);border-radius:8px;padding:8px 10px;cursor:pointer;background:#fff;transition:all .15s;text-align:center;font-size:12px;font-weight:600;color:var(--ink-md);user-select:none}
+.skins-player-toggle.in{background:var(--won-bg);border-color:var(--won);color:var(--won)}
+.skins-player-toggle .tog-name{display:block;font-size:12px;font-weight:700;margin-top:3px}
+.skins-player-toggle .tog-status{font-size:10px;margin-top:2px}
+.skins-results{border-top:1px solid var(--cream-dk)}
+.skin-row{display:flex;align-items:center;justify-content:space-between;padding:9px 14px;border-bottom:1px solid var(--cream-dk);font-size:13px}
+.skin-row:last-child{border-bottom:none}
+.skin-hole{font-family:'Playfair Display',serif;font-size:16px;color:var(--ink-lt);min-width:28px}
+.skin-val{font-weight:700;color:var(--won);font-size:13px}
+.skins-pot-summary{display:flex;gap:10px;flex-wrap:wrap;padding:10px 14px;background:rgba(201,168,76,.08);border-top:1px solid var(--cream-dk)}
+.skins-pot-pill{background:#fff;border:1px solid var(--cream-dkr);border-radius:20px;padding:4px 12px;font-size:11px;font-weight:600;color:var(--ink-md)}
+.skins-pot-pill strong{color:var(--green)}
 
 @media(max-width:600px){
   .lb-row{grid-template-columns:28px 1fr auto auto}
@@ -320,12 +342,7 @@ if('serviceWorker' in navigator){
 
 <!-- SKINS -->
 <div class="page" id="page-skins">
-  <div class="card">
-    <div class="card-head"><span class="card-title">💰 Skins — All Rounds</span>
-      <span id="totalSkinsWon" class="pts-badge">0 won</span>
-    </div>
-    <div id="skinsList"></div>
-  </div>
+  <div id="skinsContent"></div>
 </div>
 
 <!-- SETTLEMENT -->
@@ -494,6 +511,7 @@ let STATE = {
   scores:  Array(7).fill(null),
   results: Array(7).fill(null),
   activeScoreRound: 0,
+  skinsOptIn: Array(7).fill(null).map(()=>({stake:10, players:Array(8).fill(false)})),
 };
 let ME = null; // {slot, name}
 let unreadChat = 0;
@@ -556,10 +574,11 @@ const LS_KEY = 'igrc26_state';
 function saveLocal(){
   try{
     const snap = {
-      players: STATE.players,
-      draws:   STATE.draws,
-      scores:  STATE.scores,
-      results: STATE.results,
+      players:    STATE.players,
+      draws:      STATE.draws,
+      scores:     STATE.scores,
+      results:    STATE.results,
+      skinsOptIn: STATE.skinsOptIn,
     };
     localStorage.setItem(LS_KEY, JSON.stringify(snap));
   }catch(e){}
@@ -570,10 +589,11 @@ function loadLocal(){
     const s = localStorage.getItem(LS_KEY);
     if(!s) return false;
     const snap = JSON.parse(s);
-    if(snap.players) STATE.players = snap.players;
-    if(snap.draws)   STATE.draws   = snap.draws;
-    if(snap.scores)  STATE.scores  = snap.scores;
-    if(snap.results) STATE.results = snap.results;
+    if(snap.players)    STATE.players    = snap.players;
+    if(snap.draws)      STATE.draws      = snap.draws;
+    if(snap.scores)     STATE.scores     = snap.scores;
+    if(snap.results)    STATE.results    = snap.results;
+    if(snap.skinsOptIn) STATE.skinsOptIn = snap.skinsOptIn;
     return true;
   }catch(e){ return false; }
 }
@@ -848,23 +868,27 @@ async function pushScore(rndId){
 }
 
 // ── Notification helpers ──
+const notifTimers = {};
 async function maybeFireNotif(rndId, pi, hole, gross){
-  const r = ROUNDS[rndId];
-  const c = COURSES[r.course];
-  const par = c.pars[hole];
-  const diff = gross - par;
-  let type = null;
-  if(diff <= -2) type = 'eagle';
-  else if(diff === -1) type = 'birdie';
-  else if(diff === 2) type = 'double_bogey';
-
-  if(!type) return;
-  const pname = playerName(pi);
-  try{
-    await sb('notifications',{method:'POST',body:{
-      type, player_name:pname, hole:hole+1, score:gross, par, round_id:rndId
-    },prefer:'return=minimal'});
-  }catch(e){}
+  const key = `${rndId}-${pi}-${hole}`;
+  clearTimeout(notifTimers[key]);
+  notifTimers[key] = setTimeout(async () => {
+    const r = ROUNDS[rndId];
+    const c = COURSES[r.course];
+    const par = c.pars[hole];
+    const diff = gross - par;
+    let type = null;
+    if(diff <= -2) type = 'eagle';
+    else if(diff === -1) type = 'birdie';
+    else if(diff === 2) type = 'double_bogey';
+    if(!type) return;
+    const pname = playerName(pi);
+    try{
+      await sb('notifications',{method:'POST',body:{
+        type, player_name:pname, hole:hole+1, score:gross, par, round_id:rndId
+      },prefer:'return=minimal'});
+    }catch(e){}
+  }, 900);
 }
 
 // ── Net Stroke Play ──
@@ -1328,37 +1352,135 @@ function renderStandings(){
 // ═══════════════════════════════════════════════════════════
 // SKINS
 // ═══════════════════════════════════════════════════════════
+function toggleSkinOptIn(rndId, pi){
+  STATE.skinsOptIn[rndId].players[pi] = !STATE.skinsOptIn[rndId].players[pi];
+  saveLocal();
+  renderSkins();
+}
+
+function setSkinStake(rndId, val){
+  const v = parseFloat(val)||0;
+  STATE.skinsOptIn[rndId].stake = v;
+  saveLocal();
+  renderSkins();
+}
+
 function renderSkins(){
-  const el=document.getElementById('skinsList');
-  let html='',totalWon=0;
-  ROUNDS.forEach(r=>{
-    const draw=STATE.draws[r.id]; if(!draw) return;
-    const c=COURSES[r.course],scores=STATE.scores[r.id]; if(!scores) return;
-    const allPlayers=[0,1,2,3,4,5,6,7],chcps={};
-    allPlayers.forEach(pi=>chcps[pi]=courseHcp(STATE.players[pi].hi,r.slope,r.rating,r.par));
-    function getNet(pi,h){
+  const el = document.getElementById('skinsContent');
+  let totalSkinsWon = 0;
+  let html = '';
+
+  ROUNDS.forEach(r => {
+    const opt = STATE.skinsOptIn[r.id];
+    const inPlayers = opt.players.map((v,i)=>v?i:-1).filter(i=>i>=0);
+    const stake = opt.stake || 0;
+    const pot = inPlayers.length * stake;
+
+    // Compute skins for opted-in players only
+    const c = COURSES[r.course];
+    const scores = STATE.scores[r.id];
+    const chcps = {};
+    inPlayers.forEach(pi => chcps[pi] = courseHcp(STATE.players[pi].hi, r.slope, r.rating, r.par));
+
+    function getNet(pi, h){
+      if(!scores) return null;
       let g;
-      if(r.format==='NS'){ g=parseInt(scores.gross?.[pi]?.[h]); }
+      if(r.format==='NS'){ g = parseInt(scores.gross?.[pi]?.[h]); }
       else if(scores.matches){ for(const m of Object.values(scores.matches)){ if(m.gross?.[pi]?.[h]!==undefined){const v=parseInt(m.gross[pi][h]);if(!isNaN(v)){g=v;break;}} } }
       if(!g||isNaN(g)) return null;
-      return g-strokesOnHole(chcps[pi],c.si[h]);
+      return g - strokesOnHole(chcps[pi], c.si[h]);
     }
-    let carryover=0;const roundSkins=[];
-    c.pars.forEach((_,h)=>{
-      const nets=allPlayers.map(pi=>({pi,n:getNet(pi,h)})).filter(x=>x.n!==null);
-      carryover++;if(!nets.length)return;
-      const minNet=Math.min(...nets.map(x=>x.n)),winners=nets.filter(x=>x.n===minNet);
-      if(winners.length===1){totalWon++;roundSkins.push({h,winner:winners[0].pi,val:carryover,net:minNet});carryover=0;}
-    });
-    if(!roundSkins.length)return;
-    html+=`<div style="padding:10px 14px;background:var(--cream-dk);font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.06em">R${r.num} · ${r.course}</div>`;
-    html+=roundSkins.map(s=>`<div class="skin-row">
-      <span class="skin-hole">${s.h+1}</span>
-      <span><span class="chip chip-${playerTeam(s.winner).color}">${playerName(s.winner)}</span> net ${s.net}</span>
-      <span class="skin-val">💰 ×${s.val}</span></div>`).join('');
+
+    // Skins calculation
+    let carryover = 0;
+    const roundSkins = [];
+    const skinWins = {}; // pi -> count of skins won
+    inPlayers.forEach(pi => skinWins[pi] = 0);
+
+    if(inPlayers.length > 0){
+      c.pars.forEach((_,h) => {
+        const nets = inPlayers.map(pi=>({pi, n:getNet(pi,h)})).filter(x=>x.n!==null);
+        carryover++;
+        if(!nets.length) return;
+        const minNet = Math.min(...nets.map(x=>x.n));
+        const winners = nets.filter(x=>x.n===minNet);
+        if(winners.length===1){
+          totalSkinsWon++;
+          roundSkins.push({h, winner:winners[0].pi, val:carryover, net:minNet});
+          skinWins[winners[0].pi] = (skinWins[winners[0].pi]||0) + carryover;
+          carryover = 0;
+        }
+      });
+    }
+
+    // Carryover remaining (not yet won)
+    const carryoverVal = carryover > 0 ? carryover : 0;
+
+    // Build opt-in grid
+    const optGrid = Array(8).fill(0).map((_,pi) => {
+      const t = playerTeam(pi);
+      const isIn = opt.players[pi];
+      return `<div class="skins-player-toggle ${isIn?'in':''}" onclick="toggleSkinOptIn(${r.id},${pi})">
+        <span class="chip chip-${t.color}" style="font-size:9px">${t.name}</span>
+        <span class="tog-name">${playerName(pi).split(' ')[0]}</span>
+        <span class="tog-status">${isIn?'✓ In':'—'}</span>
+      </div>`;
+    }).join('');
+
+    // Build pot summary pills
+    const potPills = inPlayers.length > 0
+      ? inPlayers.map(pi => {
+          const won = skinWins[pi] || 0;
+          const paid = stake;
+          const earned = stake > 0 ? won * (pot / (roundSkins.reduce((a,s)=>a+s.val,0)||1)) : 0;
+          return `<span class="skins-pot-pill"><strong>${playerName(pi).split(' ')[0]}</strong> ${won} skin${won!==1?'s':''}</span>`;
+        }).join('')
+      : '<span style="font-size:12px;color:var(--ink-lt);padding:4px 0">No one opted in yet</span>';
+
+    // Skin results rows
+    const skinRows = roundSkins.map(s =>
+      `<div class="skin-row">
+        <span class="skin-hole">H${s.h+1}</span>
+        <span><span class="chip chip-${playerTeam(s.winner).color}" style="font-size:10px">${playerName(s.winner).split(' ')[0]}</span> <span style="font-size:11px;color:var(--ink-lt)">net ${s.net}</span></span>
+        <span class="skin-val">💰 ×${s.val}${stake>0?` = CA$${(s.val*stake).toFixed(0)}`:''}${carryoverVal>0&&s===roundSkins[roundSkins.length-1]?'':''}</span>
+      </div>`
+    ).join('');
+
+    const noScores = inPlayers.length > 0 && roundSkins.length === 0
+      ? `<div style="padding:12px 14px;font-size:12px;color:var(--ink-lt)">Scores not yet entered for opted-in players.</div>`
+      : '';
+
+    const carryoverRow = carryoverVal > 0
+      ? `<div class="skin-row" style="background:rgba(201,168,76,.06)">
+          <span class="skin-hole" style="color:var(--gold-dk)">→</span>
+          <span style="font-size:12px;color:var(--ink-lt)">${carryoverVal} hole${carryoverVal!==1?'s':''} carrying over</span>
+          <span style="font-size:12px;color:var(--gold-dk);font-weight:700">${stake>0?`CA$${(carryoverVal*stake).toFixed(0)} at stake`:''}</span>
+        </div>`
+      : '';
+
+    html += `
+    <div class="skins-round-block">
+      <div class="skins-round-head">
+        <div>
+          <div class="skins-round-title">R${r.num} · ${r.course}</div>
+          <div style="font-size:10px;color:var(--ink-lt);margin-top:2px">${r.date} · ${r.label}</div>
+        </div>
+        <div class="skins-stake-row">
+          <span>CA$</span>
+          <input type="number" min="0" step="5" value="${stake}" onchange="setSkinStake(${r.id},this.value)" style="width:60px"/>
+          <span>per skin</span>
+          ${inPlayers.length>0&&pot>0?`<span class="pts-badge" style="margin-left:4px">Pot: CA$${pot}</span>`:''}
+        </div>
+      </div>
+      <div class="skins-optin-grid">${optGrid}</div>
+      ${inPlayers.length>0?`<div class="skins-pot-summary">${potPills}</div>`:''}
+      <div class="skins-results">
+        ${skinRows}${noScores}${carryoverRow}
+      </div>
+    </div>`;
   });
-  document.getElementById('totalSkinsWon').textContent=`${totalWon} skins won`;
-  el.innerHTML=html||`<div class="empty-state">Scores needed to show skins</div>`;
+
+  el.innerHTML = html;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1371,9 +1493,54 @@ function renderSettlement(){
   const sortedTeams=[...TEAMS].map((t,i)=>({...t,...tp[i]})).sort((a,b)=>b.pts-a.pts);
   const sortedPlayers=[...Array(8).keys()].map(i=>({pi:i,...pp[i]})).sort((a,b)=>b.pts-a.pts);
   const teamPrizes=[0.55,0.30,0.15,0].map(pct=>teamPot*pct);
+
+  // Compute skins net per player across all rounds
+  const skinsNet = Array(8).fill(0);
+  ROUNDS.forEach(r => {
+    const opt = STATE.skinsOptIn[r.id];
+    const inPlayers = opt.players.map((v,i)=>v?i:-1).filter(i=>i>=0);
+    const stake = opt.stake || 0;
+    if(!inPlayers.length || !stake) return;
+
+    const c = COURSES[r.course];
+    const scores = STATE.scores[r.id];
+    const chcps = {};
+    inPlayers.forEach(pi => chcps[pi] = courseHcp(STATE.players[pi].hi, r.slope, r.rating, r.par));
+
+    function getNet(pi, h){
+      if(!scores) return null;
+      let g;
+      if(r.format==='NS'){ g = parseInt(scores.gross?.[pi]?.[h]); }
+      else if(scores.matches){ for(const m of Object.values(scores.matches)){ if(m.gross?.[pi]?.[h]!==undefined){const v=parseInt(m.gross[pi][h]);if(!isNaN(v)){g=v;break;}} } }
+      if(!g||isNaN(g)) return null;
+      return g - strokesOnHole(chcps[pi], c.si[h]);
+    }
+
+    let carryover = 0;
+    const roundSkins = [];
+    c.pars.forEach((_,h) => {
+      const nets = inPlayers.map(pi=>({pi, n:getNet(pi,h)})).filter(x=>x.n!==null);
+      carryover++;
+      if(!nets.length) return;
+      const minNet = Math.min(...nets.map(x=>x.n));
+      const winners = nets.filter(x=>x.n===minNet);
+      if(winners.length===1){ roundSkins.push({winner:winners[0].pi, val:carryover}); carryover=0; }
+    });
+
+    const totalSkins = roundSkins.reduce((a,s)=>a+s.val, 0);
+    const pot = inPlayers.length * stake;
+    // Each player paid stake to enter; winners get (val / totalSkins) * pot
+    inPlayers.forEach(pi => { skinsNet[pi] -= stake; });
+    if(totalSkins > 0){
+      roundSkins.forEach(s => { skinsNet[s.winner] += (s.val / totalSkins) * pot; });
+    }
+  });
+
+  const totalSkinsPaid = skinsNet.reduce((a,v)=>a+(v<0?-v:0),0);
+
   document.getElementById('settlementBody').innerHTML=`
     <div class="info-box" style="margin-bottom:14px">
-      <strong>Total Pot: CA$${totalPot}</strong> &nbsp;|&nbsp; Team: CA$${teamPot} &nbsp;|&nbsp; Individual: CA$${indvPot} &nbsp;|&nbsp; Skins: CA$${skinsPot}
+      <strong>Total Pot: CA$${totalPot}</strong> &nbsp;|&nbsp; Team: CA$${teamPot} &nbsp;|&nbsp; Individual: CA$${indvPot} &nbsp;|&nbsp; Skins: CA$${skinsPot} (from buy-in)
     </div>
     <div class="section-title">Team Prizes</div>
     ${sortedTeams.map((t,i)=>`<div class="settle-row">
@@ -1387,8 +1554,15 @@ function renderSettlement(){
       <span class="settle-pos">CA$${indvPot.toFixed(0)}</span>
     </div>`).join('')}
     <div class="divider"></div>
-    <div class="settle-row"><span><strong>Skins Pool</strong></span><span class="settle-pos">CA$${skinsPot.toFixed(0)}</span></div>
-    <div style="font-size:11px;color:var(--ink-lt);padding:10px 14px">Skins pool settled on-course daily.</div>`;
+    <div class="section-title">Skins (on-course, opt-in)</div>
+    ${Array(8).fill(0).map((_,pi)=>{
+      const net = skinsNet[pi];
+      if(net===0) return `<div class="settle-row"><span><span class="chip chip-${playerTeam(pi).color}">${playerTeam(pi).name}</span> <strong>${playerName(pi)}</strong></span><span style="color:var(--ink-lt)">Not in</span></div>`;
+      const cls = net>0?'settle-pos':'settle-neg';
+      const label = net>0?`+CA$${net.toFixed(0)}`:`−CA$${Math.abs(net).toFixed(0)}`;
+      return `<div class="settle-row"><span><span class="chip chip-${playerTeam(pi).color}">${playerTeam(pi).name}</span> <strong>${playerName(pi)}</strong></span><span class="${cls}">${label}</span></div>`;
+    }).join('')}
+    <div style="font-size:11px;color:var(--ink-lt);padding:10px 14px">Skins settled on-course round by round. Buy-in skins pool (CA$${skinsPot}) paid out separately at end of trip.</div>`;
 }
 
 // ═══════════════════════════════════════════════════════════
