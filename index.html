@@ -1127,7 +1127,10 @@ function setNSScore(rndId,pi,hole,val){
   pushScore(rndId);
   const newVal = parseInt(val)||0;
   if(newVal && newVal !== prev) maybeFireNotif(rndId, pi, hole, newVal);
+  // Capture scroll positions before re-render
+  const scrollPositions = captureScrollPositions('scoreContent');
   renderNetStroke(ROUNDS[rndId]);
+  restoreScrollPositions('scoreContent', scrollPositions);
 }
 
 function renderNSLeaderboard(rndId){
@@ -1176,12 +1179,38 @@ async function saveNSResult(rndId){
   showAlert(`Round ${r.num} saved! ${winners.map(w=>playerName(w.pi)).join(' & ')} win — ${pts} pt(s) each.`,'green');
 }
 
+// ── Scroll position helpers (preserve horizontal scroll on re-render) ──
+function captureScrollPositions(containerId){
+  const container = document.getElementById(containerId);
+  if(!container) return [];
+  const scrollers = container.querySelectorAll('[style*="overflow-x:auto"], [style*="overflow-x: auto"]');
+  return Array.from(scrollers).map(el => ({
+    key: el.closest('[id]')?.id || el.parentElement?.querySelector('td.hi')?.textContent?.trim() || '',
+    index: Array.from(container.querySelectorAll('[style*="overflow-x"]')).indexOf(el),
+    scrollLeft: el.scrollLeft
+  }));
+}
+
+function restoreScrollPositions(containerId, positions){
+  if(!positions || !positions.length) return;
+  const container = document.getElementById(containerId);
+  if(!container) return;
+  const scrollers = Array.from(container.querySelectorAll('[style*="overflow-x:auto"], [style*="overflow-x: auto"]'));
+  positions.forEach(saved => {
+    if(saved.scrollLeft <= 0) return;
+    const el = scrollers[saved.index];
+    if(el) el.scrollLeft = saved.scrollLeft;
+  });
+}
+
 // ── Score cell helper (match/BB scoring) ──
 // First tap sets par; tap scored hole to activate (+/−); only one active per player at a time.
 function activateCell(rndId, mkey, pi, h){
   const key = `${rndId}-${mkey}-${pi}`;
   activeCells[key] = h;
+  const scrollPositions = captureScrollPositions('scoreContent');
   renderMatchScoring(ROUNDS[rndId]);
+  restoreScrollPositions('scoreContent', scrollPositions);
 }
 
 function scoreCell(rndId, mkey, pi, h, grossVal, par, strokes, setFn){
@@ -1450,7 +1479,10 @@ function setMatchScore(rndId,mkey,pi,hole,val){
   if(intVal > 0){ activeCells[key] = hole; } else { delete activeCells[key]; }
   pushScore(rndId);
   if(intVal && intVal !== prev) maybeFireNotif(rndId,pi,hole,intVal);
+  // Capture scroll positions before re-render
+  const scrollPositions = captureScrollPositions('scoreContent');
   renderMatchScoring(ROUNDS[rndId]);
+  restoreScrollPositions('scoreContent', scrollPositions);
 }
 
 async function saveMatchResult(rndId,mkey,score,holesPlayed,holeCount,maxPts){
