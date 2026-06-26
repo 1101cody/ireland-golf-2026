@@ -556,10 +556,10 @@ const TEAMS = [
 
 const ROUNDS = [
   {id:0,num:1,date:'Jul 13',course:'The Island',      par:72,rating:75.1,slope:132,format:'BB', pts:2,label:'Best Ball'},
-  {id:1,num:2,date:'Jul 14',course:'Lahinch Old',     par:72,rating:76.6,slope:132,format:'NS', pts:2,label:'Net Stroke'},
+  {id:1,num:2,date:'Jul 14',course:'Lahinch Old',     par:72,rating:76.6,slope:132,format:'NS', pts:4,label:'Net Stroke Tourney'},
   {id:2,num:3,date:'Jul 15',course:'Ballybunion Old', par:71,rating:72.5,slope:131,format:'MP', pts:2,label:'Match Play'},
   {id:3,num:4,date:'Jul 16',course:'Dooks',           par:71,rating:72.4,slope:133,format:'BB', pts:2,label:'Best Ball'},
-  {id:4,num:5,date:'Jul 17',course:'Tralee',          par:72,rating:72.3,slope:128,format:'NS', pts:2,label:'Net Stroke'},
+  {id:4,num:5,date:'Jul 17',course:'Tralee',          par:72,rating:72.3,slope:128,format:'NS', pts:4,label:'Net Stroke Tourney'},
   {id:5,num:6,date:'Jul 18',course:'Waterville',      par:72,rating:72.3,slope:123,format:'MP', pts:2,label:'Match Play'},
   {id:6,num:7,date:'Jul 19',course:'Portmarnock',     par:72,rating:76.5,slope:132,format:'SMP',pts:4,label:'Singles Match Play ★'},
 ];
@@ -676,6 +676,8 @@ function loadLocal(){
     if(snap.skinsOptIn) STATE.skinsOptIn = snap.skinsOptIn;
     if(snap.drawLocks)  STATE.drawLocks  = snap.drawLocks;
     if(snap.roundLocks) STATE.roundLocks = snap.roundLocks;
+    // Always stamp canonical names — never let stale cached names show
+    PLAYER_NAMES.forEach((name,i)=>{ if(STATE.players[i]) STATE.players[i].name = name; });
     return true;
   }catch(e){ return false; }
 }
@@ -846,7 +848,8 @@ function renderSchedule(){
     const badgeClass={BB:'badge-bb',NS:'badge-ns',MP:'badge-mp',SMP:'badge-smp'}[fmt];
     const draw=STATE.draws[r.id];
     const roundLocked=STATE.roundLocks[r.id];
-    const drawControls = draw
+    const isNS = r.format === 'NS';
+    const drawControls = isNS ? '' : (draw
       ? (roundLocked
           ? '' // no re-randomize when round is locked
           : `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px">
@@ -856,16 +859,19 @@ function renderSchedule(){
           ? ''
           : `<div style="margin-top:10px">
                <button class="btn btn-outline btn-sm" onclick="randomizeDraw(${r.id})">🎲 Randomize Draw</button>
-             </div>`);
+             </div>`));
     const lockBtn = roundLocked
       ? `<div class="round-locked-banner">🔒 Round locked &nbsp;·&nbsp; Draw &amp; skins participants are set
            <button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="openUnlockRoundModal(${r.id})">🔓 Admin Unlock</button>
          </div>`
-      : (draw
+      : ((!isNS && draw)
           ? `<div style="margin-top:10px">
                <button class="btn-lock-round" onclick="lockRound(${r.id})">🔒 Lock Round</button>
              </div>`
           : '');
+    const drawDisplay = isNS
+      ? `<div style="font-size:12px;color:#555">All 8 players compete in a single stroke play tournament — no draw required.</div>`
+      : (draw ? renderDrawPairs(r,draw) : '<div style="font-size:12px;color:#888;margin-bottom:8px">No draw yet</div>');
     return `
     <div class="rnd-card ${fmtClass}">
       <div class="rnd-head">
@@ -875,11 +881,11 @@ function renderSchedule(){
         </div>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <span class="rnd-badge ${badgeClass}">${r.label}</span>
-          <span class="pts-badge">${r.pts===4?'4/2/0 pts ★':'2/1/0 pts'}</span>
+          <span class="pts-badge">${r.pts===4?'4/2/0 pts ★':r.format==='NS'?'2/1.5/1/0.5 pts':'2/1/0 pts'}</span>
         </div>
       </div>
       <div class="draw-area">
-        ${draw?renderDrawPairs(r,draw):'<div style="font-size:12px;color:#888;margin-bottom:8px">No draw yet</div>'}
+        ${drawDisplay}
         ${drawControls}
         ${lockBtn}
       </div>
@@ -990,9 +996,12 @@ function renderScores(){
   const r=ROUNDS[STATE.activeScoreRound];
   const el=document.getElementById('scoreContent');
   if(!r){el.innerHTML='';return;}
-  if(!STATE.draws[r.id]){
+  if(!STATE.draws[r.id] && r.format !== 'NS'){
     el.innerHTML=`<div class="card"><div class="card-body"><div class="empty-state">⚠️ Generate a draw for Round ${r.num} on the Schedule tab first.</div></div></div>`;
     return;
+  }
+  if(!STATE.draws[r.id] && r.format === 'NS'){
+    // NS needs no draw — show a note but still render scoring
   }
   if(r.format==='NS') renderNetStroke(r);
   else renderMatchScoring(r);
@@ -1060,21 +1069,24 @@ function renderNetStroke(r){
   const allPlayers=[0,1,2,3,4,5,6,7];
   const chcps=allPlayers.map(pi=>courseHcp(STATE.players[pi].hi,r.slope,r.rating,r.par));
   const pars=c.pars,sis=c.si,holeCount=pars.length;
-  const front=pars.slice(0,9).reduce((a,b)=>a+b,0);
-  const back=pars.slice(9).reduce((a,b)=>a+b,0);
+  const frontPar=pars.slice(0,9).reduce((a,b)=>a+b,0);
+  const backPar=pars.slice(9).reduce((a,b)=>a+b,0);
 
   el.innerHTML=`
   <div class="card">
     <div class="card-head"><span class="card-title">R${r.num} · ${r.course} — Net Stroke Play</span></div>
     <div class="card-body">
-      <div class="info-box" style="margin-bottom:12px">Enter <strong>gross scores per hole</strong>. Lowest net total wins 2 pts for their team.</div>
+      <div class="info-box" style="margin-bottom:12px">All 8 players compete together. Enter <strong>gross scores per hole</strong>. Points by finish: 🥇 2pts · 🥈 1.5pts · 🥉 1pt · 4th 0.5pt (ties split the combined points).</div>
       ${allPlayers.map(pi=>{
         const p=STATE.players[pi],t=playerTeam(pi),chcp=chcps[pi];
         const gross=STATE.scores[r.id]?.gross?.[pi]||Array(holeCount).fill('');
-        let netTotal=0,grossTotal=0;
+        let netTotal=0,grossTotal=0,frontNet=0,backNet=0,frontGross=0,backGross=0;
         const holeCells=pars.map((_,h)=>{
           const g=parseInt(gross[h])||0,strk=strokesOnHole(chcp,sis[h]),n=g?g-strk:null;
-          if(g){netTotal+=n;grossTotal+=g;}
+          if(g){
+            netTotal+=n; grossTotal+=g;
+            if(h<9){frontNet+=n; frontGross+=g;} else {backNet+=n; backGross+=g;}
+          }
           return `<td>
             <div class="stepper">
               <button class="stepper-btn" onclick="setNSScore(${r.id},${pi},${h},(parseInt('${gross[h]||0}')||0)+1)">+</button>
@@ -1087,24 +1099,28 @@ function renderNetStroke(r){
             ${g?`<div style="font-size:9px;color:var(--green);font-weight:700">${n}</div>`:''}
           </td>`;
         }).join('');
+        const holesIn=gross.filter(x=>x!=='').length;
         return `
         <div style="margin-bottom:16px">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
             <span class="chip chip-${t.color}">${t.name}</span>
             <strong>${p.name}</strong>
             <span style="font-size:11px;color:var(--ink-lt)">HCP ${chcp}</span>
-            ${netTotal?`<span class="net-score">Net: ${netTotal}</span>`:''}
+            ${holesIn>0?`<span class="net-score">Net: ${netTotal} (${holesIn} holes)</span>`:''}
           </div>
           <div style="overflow-x:auto">
           <table class="hole-table">
-            <thead><tr><th>Hole</th>${pars.map((_,h)=>`<th>${h+1}</th>`).join('')}<th>OUT</th><th>IN</th><th>NET</th></tr>
-            <tr style="background:rgba(201,168,76,.1)"><th>Par</th>${pars.map(p=>`<th>${p}</th>`).join('')}<th>${front}</th><th>${back}</th><th>—</th></tr>
-            <tr style="background:rgba(0,0,0,.04)"><th>SI</th>${sis.map(s=>`<th>${s}</th>`).join('')}<th>—</th><th>—</th><th>—</th></tr></thead>
+            <thead>
+              <tr><th>Hole</th>${pars.map((_,h)=>`<th>${h+1}</th>`).join('')}<th>OUT</th><th>IN</th><th>NET</th></tr>
+              <tr style="background:rgba(201,168,76,.1)"><th>Par</th>${pars.map(p=>`<th>${p}</th>`).join('')}<th>${frontPar}</th><th>${backPar}</th><th>—</th></tr>
+              <tr style="background:rgba(0,0,0,.04)"><th>SI</th>${sis.map(s=>`<th>${s}</th>`).join('')}<th>—</th><th>—</th><th>—</th></tr>
+            </thead>
             <tbody><tr>
               <td class="hi">${p.name.split(' ')[0]}</td>
               ${holeCells}
-              <td class="net-score">${grossTotal||''}</td><td></td>
-              <td class="net-score">${netTotal||''}</td>
+              <td class="net-score">${frontGross?frontGross:''}</td>
+              <td class="net-score">${backGross?backGross:''}</td>
+              <td class="net-score" style="background:rgba(201,168,76,.1)">${netTotal?netTotal:''}</td>
             </tr></tbody>
           </table>
           </div>
@@ -1134,7 +1150,7 @@ function setNSScore(rndId,pi,hole,val){
 }
 
 function renderNSLeaderboard(rndId){
-  const el=document.getElementById(`nsLeaderboard_${rndId}`);
+  const el=document.getElementById('nsLeaderboard_'+rndId);
   if(!el)return;
   const r=ROUNDS[rndId],c=COURSES[r.course];
   const rows=[0,1,2,3,4,5,6,7].map(pi=>{
@@ -1145,13 +1161,24 @@ function renderNSLeaderboard(rndId){
     return {pi,net,filled:gross.filter(x=>x!=='').length};
   }).filter(x=>x.filled>0).sort((a,b)=>a.net-b.net);
   if(!rows.length){el.innerHTML='';return;}
-  el.innerHTML=`<div class="section-title">Live Leaderboard</div>`+
-    rows.map((row,i)=>{
+  const posPoints=[2,1.5,1,0.5];
+  const medals=['\uD83E\uDD47','\uD83E\uDD48','\uD83E\uDD49','4th'];
+  let curPos=0;
+  const withPos=rows.map((row,i)=>{
+    if(i>0&&row.net===rows[i-1].net){/* same pos */}else curPos=i;
+    const tied=rows.filter(r2=>r2.net===row.net).length;
+    const tiedPts=Array.from({length:tied},(_,k)=>posPoints[curPos+k]||0);
+    const splitPts=(tiedPts.reduce((a,b)=>a+b,0)/tied);
+    const displayPts=splitPts%1===0?splitPts:splitPts.toFixed(1);
+    return {...row,curPos,medal:medals[curPos]||(curPos+1)+'th',pts:displayPts,tied:tied>1};
+  });
+  el.innerHTML='<div class="section-title">Live Leaderboard</div>'+
+    withPos.map(row=>{
       const t=playerTeam(row.pi);
-      return `<div class="lb-row"><span class="lb-pos">${i+1}</span>
-        <span><span class="chip chip-${t.color}">${t.name}</span> <strong>${playerName(row.pi)}</strong></span>
-        <span class="lb-pts">${row.net}</span>
-        <span class="lb-whl">${row.filled} holes</span></div>`;
+      return '<div class="lb-row"><span class="lb-pos">'+row.medal+'</span>'+
+        '<span><span class="chip chip-'+t.color+'">'+t.name+'</span> <strong>'+playerName(row.pi)+'</strong></span>'+
+        '<span class="lb-pts">'+row.net+'</span>'+
+        '<span class="lb-whl">'+row.filled+' holes &middot; '+row.pts+'pt'+(row.tied?' (tied)':'')+'</span></div>';
     }).join('');
 }
 
@@ -1160,23 +1187,46 @@ async function saveNSResult(rndId){
   const rows=[0,1,2,3,4,5,6,7].map(pi=>{
     const chcp=courseHcp(STATE.players[pi].hi,r.slope,r.rating,r.par);
     const gross=STATE.scores[rndId]?.gross?.[pi]||[];
-    let net=0;
-    c.pars.forEach((_,h)=>{ const g=parseInt(gross[h])||0; if(g) net+=g-strokesOnHole(chcp,c.si[h]); });
-    return {pi,net};
-  }).sort((a,b)=>a.net-b.net);
-  const minNet=rows[0].net,winners=rows.filter(x=>x.net===minNet),pts=winners.length>1?1:2;
+    let net=0,filled=0;
+    c.pars.forEach((_,h)=>{ const g=parseInt(gross[h])||0; if(g){net+=g-strokesOnHole(chcp,c.si[h]);filled++;} });
+    return {pi,net,filled};
+  }).filter(x=>x.filled>0).sort((a,b)=>a.net-b.net);
+  if(!rows.length){ showAlert('No scores entered yet.','red'); return; }
+  // Award 2/1.5/1/0.5 pts by finish position; ties split the combined points for those positions
+  const posPoints=[2,1.5,1,0.5];
   const result={type:'NS',pts:{}};
   [0,1,2,3,4,5,6,7].forEach(pi=>result.pts[pi]=0);
-  winners.forEach(w=>result.pts[w.pi]=pts);
+  let i=0;
+  while(i<rows.length){
+    let j=i;
+    while(j<rows.length&&rows[j].net===rows[i].net) j++;
+    // positions i..j-1 are tied — sum their points and split evenly
+    const tiedPts=Array.from({length:j-i},(_,k)=>posPoints[i+k]||0);
+    const splitPts=tiedPts.reduce((a,b)=>a+b,0)/(j-i);
+    for(let k=i;k<j;k++) result.pts[rows[k].pi]=splitPts;
+    i=j;
+  }
   STATE.results[rndId]=result;
   saveLocal();
   try{
-    await sb(`results?round_id=eq.${rndId}`,{method:'PATCH',body:{data:result},prefer:'return=minimal'});
+    await sb('results?round_id=eq.'+rndId,{method:'PATCH',body:{data:result},prefer:'return=minimal'});
   }catch(e){
     try{ await sb('results',{method:'POST',body:{round_id:rndId,data:result},prefer:'return=minimal'}); }catch(e2){}
   }
   updateHero(); renderStandings();
-  showAlert(`Round ${r.num} saved! ${winners.map(w=>playerName(w.pi)).join(' & ')} win — ${pts} pt(s) each.`,'green');
+  const medals=['\uD83E\uDD47','\uD83E\uDD48','\uD83E\uDD49','4th'];
+  let pos=0,summary=[];
+  let si=0;
+  while(si<Math.min(rows.length,4)){
+    let sj=si;
+    while(sj<rows.length&&rows[sj].net===rows[si].net) sj++;
+    const names=rows.slice(si,sj).map(x=>playerName(x.pi)).join('+');
+    const pts=result.pts[rows[si].pi];
+    const ptsStr=pts%1===0?pts:pts.toFixed(1);
+    summary.push(medals[si]||''+(si+1)+'th'+' '+names+' ('+rows[si].net+') +'+ptsStr+'pt');
+    si=sj;
+  }
+  showAlert('Round '+r.num+' saved! '+summary.join(' | '),'green');
 }
 
 // ── Scroll position helpers (preserve horizontal scroll on re-render) ──
@@ -1541,9 +1591,12 @@ function computePoints(){
     if(!res) return;
     const r=ROUNDS[rndId];
     if(res.type==='NS'){
+      // pts[pi] can be fractional (split tie). Track W/H/L by position bucket.
+      const ptsArr=[0,1,2,3,4,5,6,7].map(pi=>({pi,pts:res.pts[pi]||0})).filter(x=>x.pts>0).sort((a,b)=>b.pts-a.pts);
       [0,1,2,3,4,5,6,7].forEach(pi=>{
         const pts=res.pts[pi]||0; if(!pts) return;
-        pp[pi].pts+=pts; pp[pi].w++;
+        pp[pi].pts+=pts;
+        if(pts>=4) pp[pi].w++; else if(pts>=3) pp[pi].w++; else if(pts>0) pp[pi].h++;
         const ti=playerTeam(pi).id; tp[ti].pts+=pts; tp[ti].w++;
       });
     } else {
