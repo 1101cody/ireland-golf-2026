@@ -226,6 +226,12 @@ input:focus{outline:none;border-color:var(--gold)}
 .player-pick-btn:hover{border-color:var(--gold);background:var(--cream)}
 .player-pick-btn.taken{opacity:.4;cursor:not-allowed}
 
+/* ── DRAW LOCK ── */
+.btn-lock{background:transparent;border:1.5px solid var(--cream-dkr);color:var(--ink-lt);padding:5px 10px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:5px;transition:all .15s}
+.btn-lock:hover{border-color:var(--gold);color:var(--gold-dk)}
+.btn-lock.locked{background:var(--won-bg);border-color:var(--won);color:var(--won)}
+.draw-locked-badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:var(--ink-lt);background:var(--cream-dk);border-radius:6px;padding:4px 10px}
+
 /* ── SKINS OPT-IN ── */
 .skins-round-block{border:1px solid var(--cream-dkr);border-radius:10px;margin-bottom:14px;overflow:hidden}
 .skins-round-head{background:var(--cream-dk);padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
@@ -529,6 +535,7 @@ let STATE = {
   results: Array(7).fill(null),
   activeScoreRound: 0,
   skinsOptIn: Array(7).fill(null).map(()=>({stake:10, players:Array(8).fill(false)})),
+  drawLocks: Array(7).fill(false),
 };
 let ME = null; // {slot, name}
 let unreadChat = 0;
@@ -596,6 +603,7 @@ function saveLocal(){
       scores:     STATE.scores,
       results:    STATE.results,
       skinsOptIn: STATE.skinsOptIn,
+      drawLocks:  STATE.drawLocks,
     };
     localStorage.setItem(LS_KEY, JSON.stringify(snap));
   }catch(e){}
@@ -611,6 +619,7 @@ function loadLocal(){
     if(snap.scores)     STATE.scores     = snap.scores;
     if(snap.results)    STATE.results    = snap.results;
     if(snap.skinsOptIn) STATE.skinsOptIn = snap.skinsOptIn;
+    if(snap.drawLocks)  STATE.drawLocks  = snap.drawLocks;
     return true;
   }catch(e){ return false; }
 }
@@ -781,6 +790,20 @@ function renderSchedule(){
     const fmtClass={BB:'bb',NS:'ns',MP:'mp',SMP:'smp'}[fmt];
     const badgeClass={BB:'badge-bb',NS:'badge-ns',MP:'badge-mp',SMP:'badge-smp'}[fmt];
     const draw=STATE.draws[r.id];
+    const locked=STATE.drawLocks[r.id];
+    const drawControls = draw
+      ? `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px">
+          ${!locked
+            ? `<button class="btn btn-outline btn-sm" onclick="randomizeDraw(${r.id})">🎲 Re-randomize Draw</button>`
+            : `<span class="draw-locked-badge">🔒 Draw locked</span>`
+          }
+          <button class="btn-lock ${locked?'locked':''}" onclick="toggleDrawLock(${r.id})">
+            ${locked?'🔓 Unlock':'🔒 Lock Draw'}
+          </button>
+        </div>`
+      : `<div style="margin-top:10px">
+          <button class="btn btn-outline btn-sm" onclick="randomizeDraw(${r.id})">🎲 Randomize Draw</button>
+        </div>`;
     return `
     <div class="rnd-card ${fmtClass}">
       <div class="rnd-head">
@@ -795,7 +818,7 @@ function renderSchedule(){
       </div>
       <div class="draw-area">
         ${draw?renderDrawPairs(r,draw):'<div style="font-size:12px;color:#888;margin-bottom:8px">No draw yet</div>'}
-        <button class="btn btn-outline btn-sm" onclick="randomizeDraw(${r.id})">🎲 ${draw?'Re-':''}Randomize Draw</button>
+        ${drawControls}
       </div>
     </div>`;
   }).join('');
@@ -825,7 +848,14 @@ function renderDrawPairs(r,draw){
 
 function fisherYates(arr){ const a=[...arr]; for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a; }
 
+function toggleDrawLock(roundIdx){
+  STATE.drawLocks[roundIdx] = !STATE.drawLocks[roundIdx];
+  saveLocal();
+  renderSchedule();
+}
+
 async function randomizeDraw(roundIdx){
+  if(STATE.drawLocks[roundIdx]) return; // silently ignore if locked
   const shuffled=fisherYates([0,1,2,3,4,5,6,7]);
   const pairs=[[shuffled[0],shuffled[1]],[shuffled[2],shuffled[3]],[shuffled[4],shuffled[5]],[shuffled[6],shuffled[7]]];
   STATE.draws[roundIdx]=pairs;
