@@ -1120,17 +1120,7 @@ function renderNetStroke(r){
             netTotal+=n; grossTotal+=g;
             if(h<9){frontNet+=n; frontGross+=g;} else {backNet+=n; backGross+=g;}
           }
-          return `<td>
-            <div class="stepper">
-              <button class="stepper-btn" onclick="setNSScore(${r.id},${pi},${h},(parseInt('${gross[h]||0}')||0)+1)">+</button>
-              <input class="stepper-input" type="number" min="1" max="15" value="${g||''}" placeholder="${pars[h]}"
-                onchange="if(this.value)setNSScore(${r.id},${pi},${h},this.value)"
-                oninput="if(this.value&&this.value.length<=2)setNSScore(${r.id},${pi},${h},this.value)"/>
-              <button class="stepper-btn" onclick="setNSScore(${r.id},${pi},${h},Math.max(1,(parseInt('${gross[h]||0}')||0)-1))">−</button>
-            </div>
-            ${strk>0?`<div class="stroke-dot" title="${strk} stroke(s)"></div>`:''}
-            ${g?`<div style="font-size:9px;color:var(--green);font-weight:700">${n}</div>`:''}
-          </td>`;
+          return `<td>${scoreCell(r.id,'ns',pi,h,gross[h]||'',pars[h],strk,'setNSScore')}</td>`;
         }).join('');
         const holesIn=gross.filter(x=>x!=='').length;
         return `
@@ -1168,14 +1158,17 @@ function renderNetStroke(r){
   renderNSLeaderboard(r.id);
 }
 
-function setNSScore(rndId,pi,hole,val){
+function setNSScore(rndId,mkey,pi,hole,val){
   const prev = parseInt(STATE.scores[rndId]?.gross?.[pi]?.[hole])||0;
   if(!STATE.scores[rndId]) STATE.scores[rndId]={gross:{}};
   if(!STATE.scores[rndId].gross) STATE.scores[rndId].gross={};
   if(!STATE.scores[rndId].gross[pi]) STATE.scores[rndId].gross[pi]=Array(18).fill('');
-  STATE.scores[rndId].gross[pi][hole]=val;
+  const intVal = parseInt(val)||0;
+  STATE.scores[rndId].gross[pi][hole] = intVal > 0 ? intVal : '';
+  const key = `${rndId}-ns-${pi}`;
+  if(intVal > 0){ activeCells[key] = hole; } else { delete activeCells[key]; }
   pushScore(rndId);
-  const newVal = parseInt(val)||0;
+  const newVal = intVal;
   if(newVal && newVal !== prev) maybeFireNotif(rndId, pi, hole, newVal);
   // Capture scroll positions before re-render
   const scrollPositions = captureScrollPositions('scoreContent');
@@ -1293,7 +1286,8 @@ function activateCell(rndId, mkey, pi, h){
   const key = `${rndId}-${mkey}-${pi}`;
   activeCells[key] = h;
   const scrollPositions = captureScrollPositions('scoreContent');
-  renderMatchScoring(ROUNDS[rndId]);
+  if(mkey === 'ns') renderNetStroke(ROUNDS[rndId]);
+  else renderMatchScoring(ROUNDS[rndId]);
   restoreScrollPositions('scoreContent', scrollPositions);
 }
 
@@ -1345,10 +1339,16 @@ function scoreCell(rndId, mkey, pi, h, grossVal, par, strokes, setFn){
 function renderMatchScoring(r){
   const el=document.getElementById('scoreContent');
   const draw=STATE.draws[r.id],c=COURSES[r.course],fmt=r.format;
-  // SMP: 4 individual singles matches; BB/MP: 2 doubles matchups
-  const matchups = fmt==='SMP'
-    ? draw.map(pair=>[[pair[0]],[pair[1]]])           // 4 × 1v1
-    : [[draw[0],draw[1]],[draw[2],draw[3]]];           // 2 × 2v2
+  // SMP: 4 individual singles matches; BB/MP: 2 doubles matchups — carry origIdx so re-ordering doesn't corrupt mkeys
+  let matchups = fmt==='SMP'
+    ? draw.map((pair,i)=>({matchup:[[pair[0]],[pair[1]]], origIdx:i}))
+    : [[draw[0],draw[1]],[draw[2],draw[3]]].map((pair,i)=>({matchup:pair, origIdx:i}));
+  // Float logged-in player's match card to the top
+  const meSlot = ME ? ME.slot : -1;
+  if(meSlot >= 0){
+    const meIdx = matchups.findIndex(({matchup:[pairA,pairB]})=>[...pairA,...pairB].includes(meSlot));
+    if(meIdx > 0){ const [m]=matchups.splice(meIdx,1); matchups.unshift(m); }
+  }
   if(!STATE.scores[r.id]) STATE.scores[r.id]={matches:{}};
   el.innerHTML=`
   <div class="info-box" style="margin-bottom:12px">
@@ -1357,7 +1357,7 @@ function renderMatchScoring(r){
       fmt==='SMP'?'4 singles matches. Win/halve/lose = 4/2/0 pts per player to their home team.':
       'Net match play hole-by-hole. Win/halve/lose = 2/1/0 pts to home teams.'}
   </div>
-  ${matchups.map((m,mi)=>renderMatchCard(r,m,mi,fmt,c)).join('')}`;
+  ${matchups.map(({matchup,origIdx})=>renderMatchCard(r,matchup,origIdx,fmt,c)).join('')}`;
 }
 
 function renderMatchCard(r,matchup,matchIdx,fmt,c){
@@ -2022,11 +2022,14 @@ function renderSbTrip(el){
 // ═══════════════════════════════════════════════════════════
 function renderSettlement(){
   const totalPot=STATE.players.reduce((a,p)=>a+p.buyin,0);
-  const teamPot=totalPot*0.5,indvPot=totalPot*0.25,skinsPot=totalPot*0.25;
+  const skinsPot=STATE.players.reduce((a,p)=>a+(p.buyin||0),0)*0.25; // 25% of pot to skins
+  const teamPot=totalPot - skinsPot; // rest goes to teams
   const {tp,pp}=computePoints();
   const sortedTeams=[...TEAMS].map((t,i)=>({...t,...tp[i]})).sort((a,b)=>b.pts-a.pts);
-  const sortedPlayers=[...Array(8).keys()].map(i=>({pi:i,...pp[i]})).sort((a,b)=>b.pts-a.pts);
-  const teamPrizes=[0.55,0.30,0.15,0].map(pct=>teamPot*pct);
+
+  // 2nd place gets their buy-in back; 1st place gets everything else
+  const secondBuyin = sortedTeams[1] ? sortedTeams[1].players.reduce((a,pi)=>a+(STATE.players[pi]?.buyin||0),0) : 0;
+  const teamPrizes = [teamPot - secondBuyin, secondBuyin, 0, 0];
 
   // Compute skins net per player across all rounds
   const skinsNet = Array(8).fill(0);
@@ -2073,18 +2076,13 @@ function renderSettlement(){
 
   document.getElementById('settlementBody').innerHTML=`
     <div class="info-box" style="margin-bottom:14px">
-      <strong>Total Pot: CA$${totalPot}</strong> &nbsp;|&nbsp; Team: CA$${teamPot} &nbsp;|&nbsp; Individual: CA$${indvPot} &nbsp;|&nbsp; Skins: CA$${skinsPot} (from buy-in)
+      <strong>Total Pot: CA$${totalPot}</strong> &nbsp;|&nbsp; Teams: CA$${teamPot.toFixed(0)} &nbsp;|&nbsp; Skins: CA$${skinsPot.toFixed(0)} (from buy-in)
     </div>
     <div class="section-title">Team Prizes</div>
+    <div style="font-size:11px;color:var(--ink-lt);padding:6px 14px 4px">1st place wins the pot; 2nd place wins their buy-in back.</div>
     ${sortedTeams.map((t,i)=>`<div class="settle-row">
       <span><span class="chip chip-${t.color}">${t.name}</span> <strong>#${i+1}</strong> — ${t.pts} pts</span>
       <span class="${teamPrizes[i]>0?'settle-pos':''}">CA$${teamPrizes[i].toFixed(0)}</span>
-    </div>`).join('')}
-    <div class="divider"></div>
-    <div class="section-title">Individual Prize</div>
-    ${sortedPlayers.slice(0,1).map(p=>`<div class="settle-row">
-      <span><span class="chip chip-${playerTeam(p.pi).color}">${playerTeam(p.pi).name}</span> <strong>${playerName(p.pi)}</strong> — ${p.pts} pts</span>
-      <span class="settle-pos">CA$${indvPot.toFixed(0)}</span>
     </div>`).join('')}
     <div class="divider"></div>
     <div class="section-title">Skins (on-course, opt-in)</div>
@@ -2095,7 +2093,7 @@ function renderSettlement(){
       const label = net>0?`+CA$${net.toFixed(0)}`:`−CA$${Math.abs(net).toFixed(0)}`;
       return `<div class="settle-row"><span><span class="chip chip-${playerTeam(pi).color}">${playerTeam(pi).name}</span> <strong>${playerName(pi)}</strong></span><span class="${cls}">${label}</span></div>`;
     }).join('')}
-    <div style="font-size:11px;color:var(--ink-lt);padding:10px 14px">Skins settled on-course round by round. Buy-in skins pool (CA$${skinsPot}) paid out separately at end of trip.</div>`;
+    <div style="font-size:11px;color:var(--ink-lt);padding:10px 14px">Skins settled on-course round by round. Buy-in skins pool (CA$${skinsPot.toFixed(0)}) paid out separately at end of trip.</div>`;
 }
 
 // ═══════════════════════════════════════════════════════════
