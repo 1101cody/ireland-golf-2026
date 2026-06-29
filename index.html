@@ -579,15 +579,90 @@ const ROUNDS = [
   {id:6,num:7,date:'Jul 19',course:'Portmarnock',     par:72,rating:76.5,slope:132,format:'SMP',pts:4,label:'Singles Match Play ★'},
 ];
 
+// Tee data: each course has named tees with rating, slope, par (and same hole pars/SI for now).
+// Hole pars and SI are shared across tees at each course (standard for these links courses).
+// Tee colours verified from official scorecards / 18Birdies / course websites.
 const COURSES = {
-  'The Island':      {pars:[4,4,3,4,5,4,4,3,4,4,4,5,3,4,4,3,4,4],si:[11,7,15,3,13,5,9,17,1,12,8,16,4,14,6,18,2,10]},
-  'Lahinch Old':     {pars:[4,5,3,4,5,3,4,4,4,4,4,4,4,4,3,4,3,5],si:[5,11,17,3,15,13,1,7,9,8,4,18,12,2,16,6,14,10]},
-  'Ballybunion Old': {pars:[4,4,3,4,5,5,4,4,3,4,4,3,4,5,4,3,4,4],si:[9,5,17,1,13,11,3,15,7,10,2,18,6,14,4,16,8,12]},
-  'Dooks':           {pars:[4,4,3,4,5,4,4,3,4,5,4,3,4,4,3,4,5,4],si:[7,3,17,9,13,1,11,15,5,12,6,18,8,4,16,2,14,10]},
-  'Tralee':          {pars:[4,4,3,4,4,5,3,4,4,4,4,3,5,4,3,4,5,4],si:[5,9,15,1,11,13,17,3,7,6,10,18,12,2,16,4,14,8]},
-  'Waterville':      {pars:[4,4,3,4,5,3,4,4,5,4,5,3,4,4,3,4,4,4],si:[11,5,17,7,13,15,3,9,1,10,4,18,8,14,16,2,6,12]},
-  'Portmarnock':     {pars:[4,4,4,4,4,5,3,4,4,4,4,3,4,4,3,4,3,4],si:[11,15,13,1,5,9,17,3,7,10,8,14,16,2,18,4,12,6]},
+  'The Island':      {
+    pars:[4,4,3,4,5,4,4,3,4,4,4,5,3,4,4,3,4,4],si:[11,7,15,3,13,5,9,17,1,12,8,16,4,14,6,18,2,10],
+    tees:[
+      {name:'Blue',  color:'#1a4fc4',rating:74.7,slope:132,par:72},
+      {name:'White', color:'#e8e8e8',rating:74.0,slope:129,par:72},
+      {name:'Green', color:'#2d7a2d',rating:72.1,slope:127,par:72},
+      {name:'Red',   color:'#cc2200',rating:68.6,slope:120,par:72},
+    ]
+  },
+  'Lahinch Old':     {
+    pars:[4,5,3,4,5,3,4,4,4,4,4,4,4,4,3,4,3,5],si:[5,11,17,3,15,13,1,7,9,8,4,18,12,2,16,6,14,10],
+    tees:[
+      {name:'Blue',  color:'#1a4fc4',rating:76.6,slope:132,par:72},
+      {name:'White', color:'#e8e8e8',rating:74.0,slope:128,par:72},
+      {name:'Green', color:'#2d7a2d',rating:71.5,slope:124,par:72},
+      {name:'Red',   color:'#cc2200',rating:70.0,slope:120,par:72},
+    ]
+  },
+  'Ballybunion Old': {
+    pars:[4,4,3,4,5,5,4,4,3,4,4,3,4,5,4,3,4,4],si:[9,5,17,1,13,11,3,15,7,10,2,18,6,14,4,16,8,12],
+    tees:[
+      {name:'Blue',  color:'#1a4fc4',rating:74.5,slope:131,par:71},
+      {name:'White', color:'#e8e8e8',rating:72.5,slope:131,par:71},
+      {name:'Green', color:'#2d7a2d',rating:70.9,slope:129,par:71},
+      {name:'Red',   color:'#cc2200',rating:72.5,slope:128,par:72},
+    ]
+  },
+  'Dooks':           {
+    pars:[4,4,3,4,5,4,4,3,4,5,4,3,4,4,3,4,5,4],si:[7,3,17,9,13,1,11,15,5,12,6,18,8,4,16,2,14,10],
+    tees:[
+      {name:'Blue',  color:'#1a4fc4',rating:72.4,slope:133,par:71},
+      {name:'White', color:'#e8e8e8',rating:70.6,slope:129,par:71},
+      {name:'Yellow',color:'#d4a800',rating:69.0,slope:127,par:71},
+      {name:'Red',   color:'#cc2200',rating:67.2,slope:120,par:71},
+    ]
+  },
+  'Tralee':          {
+    pars:[4,4,3,4,4,5,3,4,4,4,4,3,5,4,3,4,5,4],si:[5,9,15,1,11,13,17,3,7,6,10,18,12,2,16,4,14,8],
+    tees:[
+      {name:'Blue',  color:'#1a4fc4',rating:73.6,slope:135,par:72},
+      {name:'White', color:'#e8e8e8',rating:72.3,slope:128,par:72},
+      {name:'Green', color:'#2d7a2d',rating:70.5,slope:126,par:72},
+      {name:'Red',   color:'#cc2200',rating:69.9,slope:120,par:72},
+    ]
+  },
+  'Waterville':      {
+    pars:[4,4,3,4,5,3,4,4,5,4,5,3,4,4,3,4,4,4],si:[11,5,17,7,13,15,3,9,1,10,4,18,8,14,16,2,6,12],
+    tees:[
+      {name:'Black', color:'#1a1a1a',rating:76.1,slope:131,par:72},
+      {name:'Blue',  color:'#1a4fc4',rating:73.6,slope:127,par:72},
+      {name:'White', color:'#e8e8e8',rating:72.3,slope:123,par:72},
+      {name:'Green', color:'#2d7a2d',rating:70.9,slope:120,par:72},
+    ]
+  },
+  'Portmarnock':     {
+    pars:[4,4,4,4,4,5,3,4,4,4,4,3,4,4,3,4,3,4],si:[11,15,13,1,5,9,17,3,7,10,8,14,16,2,18,4,12,6],
+    tees:[
+      {name:'Blue',  color:'#1a4fc4',rating:79.0,slope:136,par:72},
+      {name:'White', color:'#e8e8e8',rating:76.5,slope:132,par:72},
+      {name:'Green', color:'#2d7a2d',rating:75.5,slope:130,par:72},
+      {name:'Red',   color:'#cc2200',rating:73.5,slope:126,par:72},
+    ]
+  },
 };
+
+// Helper: get the selected tee object for a round (falls back to Championship)
+function getRoundTee(rndId){
+  const r = ROUNDS[rndId];
+  const c = COURSES[r.course];
+  const teeIdx = STATE.tees[rndId] ?? 0;
+  return c.tees[teeIdx] || c.tees[0];
+}
+
+function setRoundTee(rndId, teeIdx){
+  STATE.tees[rndId] = parseInt(teeIdx);
+  saveLocal();
+  renderSchedule();
+  renderScores();
+  renderSkins();
+}
 
 // ═══════════════════════════════════════════════════════════
 // STATE
@@ -603,6 +678,7 @@ let STATE = {
   skinsOptIn: Array(7).fill(null).map(()=>({stake:10, players:Array(8).fill(false)})),
   drawLocks: Array(7).fill(false),
   roundLocks: Array(7).fill(false),
+  tees:    Array(7).fill(0), // tee index per round (0=Championship)
 };
 let ME = null; // {slot, name}
 let unreadChat = 0;
@@ -674,6 +750,7 @@ function saveLocal(){
       skinsOptIn: STATE.skinsOptIn,
       drawLocks:  STATE.drawLocks,
       roundLocks: STATE.roundLocks,
+      tees:       STATE.tees,
     };
     localStorage.setItem(LS_KEY, JSON.stringify(snap));
   }catch(e){}
@@ -691,6 +768,7 @@ function loadLocal(){
     if(snap.skinsOptIn) STATE.skinsOptIn = snap.skinsOptIn;
     if(snap.drawLocks)  STATE.drawLocks  = snap.drawLocks;
     if(snap.roundLocks) STATE.roundLocks = snap.roundLocks;
+    if(snap.tees)       STATE.tees       = snap.tees;
     // Always stamp canonical names — never let stale cached names show
     PLAYER_NAMES.forEach((name,i)=>{ if(STATE.players[i]) STATE.players[i].name = name; });
     return true;
@@ -893,12 +971,37 @@ function renderSchedule(){
       <div class="rnd-head">
         <div>
           <div class="rnd-name">R${r.num} · ${r.course}</div>
-          <div class="rnd-meta">${r.date} · Par ${r.par} · Rating ${r.rating} · Slope ${r.slope}</div>
+          <div class="rnd-meta">${r.date} · ${(()=>{const t=getRoundTee(r.id);return `Par ${t.par} · Rating ${t.rating} · Slope ${t.slope}`;})()}</div>
         </div>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <span class="rnd-badge ${badgeClass}">${r.label}</span>
           <span class="pts-badge">${r.pts===4?'4/2/0 pts ★':r.format==='NS'?'2/1.5/1/0.5 pts':'2/1/0 pts'}</span>
         </div>
+      </div>
+      <div style="margin-bottom:10px">
+        <div style="font-size:11px;font-weight:600;color:var(--ink-lt);margin-bottom:5px;text-transform:uppercase;letter-spacing:.05em">Tees</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">${(()=>{
+          const c=COURSES[r.course];
+          const selIdx=STATE.tees[r.id]??0;
+          const locked=STATE.roundLocks[r.id];
+          return c.tees.map((t,i)=>{
+            const isSelected = i===selIdx;
+            const onclickAttr = locked ? '' : ` setRoundTee(${r.id},${i})`;
+            const borderColor = isSelected ? t.color : 'var(--cream-dkr)';
+            const bgColor = isSelected ? t.color+'22' : '#fff';
+            const fontWeight = isSelected ? '700' : '400';
+            const cursorStyle = locked ? 'default' : 'pointer';
+            const opacityVal = (locked && !isSelected) ? '.5' : '1';
+            return `<button onclick="${onclickAttr}"
+              style="padding:5px 12px;border-radius:20px;border:2px solid ${borderColor};
+                     background:${bgColor};color:var(--ink);font-size:12px;font-weight:${fontWeight};
+                     cursor:${cursorStyle};transition:all .15s;display:flex;align-items:center;gap:5px;opacity:${opacityVal}">
+              <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${t.color};border:1px solid rgba(0,0,0,.15);flex-shrink:0"></span>
+              ${t.name} <span style="font-size:10px;color:var(--ink-lt)">(${t.rating}/${t.slope})</span>
+            </button>`;
+          }).join('');
+        })()}</div>
+        ${(()=>{const t=getRoundTee(r.id);return `<div style="font-size:11px;color:var(--ink-lt);margin-top:5px">Playing: <strong>${t.name}</strong> · Rating ${t.rating} · Slope ${t.slope} · Par ${t.par}</div>`;})()}
       </div>
       <div class="draw-area">
         ${drawDisplay}
@@ -1100,14 +1203,17 @@ function renderNetStroke(r){
   const allPlayers=[0,1,2,3,4,5,6,7];
   const meSlot = ME ? ME.slot : -1;
   allPlayers.sort((a,b)=>{ if(a===meSlot)return -1; if(b===meSlot)return 1; return a-b; });
-  const chcps=allPlayers.map(pi=>courseHcp(STATE.players[pi].hi,r.slope,r.rating,r.par));
+  const chcps=allPlayers.map(pi=>courseHcp(STATE.players[pi].hi,getRoundTee(r.id).slope,getRoundTee(r.id).rating,getRoundTee(r.id).par));
   const pars=c.pars,sis=c.si,holeCount=pars.length;
   const frontPar=pars.slice(0,9).reduce((a,b)=>a+b,0);
   const backPar=pars.slice(9).reduce((a,b)=>a+b,0);
 
   el.innerHTML=`
   <div class="card">
-    <div class="card-head"><span class="card-title">R${r.num} · ${r.course} — Net Stroke Play</span></div>
+    <div class="card-head">
+      <span class="card-title">R${r.num} · ${r.course} — Net Stroke Play</span>
+      ${(()=>{const t=getRoundTee(r.id);return `<span style="font-size:11px;color:var(--ink-lt);display:flex;align-items:center;gap:5px"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${COURSES[r.course].tees[STATE.tees[r.id]??0].color};border:1px solid rgba(0,0,0,.15)"></span>${t.name} · Par ${t.par} · ${t.rating}/${t.slope}</span>`;})()}
+    </div>
     <div class="card-body">
       <div class="info-box" style="margin-bottom:12px">All 8 players compete together. Enter <strong>gross scores per hole</strong>. Points by finish: 🥇 2pts · 🥈 1.5pts · 🥉 1pt · 4th 0.5pt (ties split the combined points).</div>
       ${allPlayers.map(pi=>{
@@ -1181,7 +1287,7 @@ function renderNSLeaderboard(rndId){
   if(!el)return;
   const r=ROUNDS[rndId],c=COURSES[r.course];
   const rows=[0,1,2,3,4,5,6,7].map(pi=>{
-    const chcp=courseHcp(STATE.players[pi].hi,r.slope,r.rating,r.par);
+    const chcp=courseHcp(STATE.players[pi].hi,getRoundTee(r.id).slope,getRoundTee(r.id).rating,getRoundTee(r.id).par);
     const gross=STATE.scores[rndId]?.gross?.[pi]||[];
     let net=0;
     c.pars.forEach((_,h)=>{ const g=parseInt(gross[h])||0; if(g) net+=g-strokesOnHole(chcp,c.si[h]); });
@@ -1212,7 +1318,7 @@ function renderNSLeaderboard(rndId){
 async function saveNSResult(rndId){
   const r=ROUNDS[rndId],c=COURSES[r.course];
   const rows=[0,1,2,3,4,5,6,7].map(pi=>{
-    const chcp=courseHcp(STATE.players[pi].hi,r.slope,r.rating,r.par);
+    const chcp=courseHcp(STATE.players[pi].hi,getRoundTee(r.id).slope,getRoundTee(r.id).rating,getRoundTee(r.id).par);
     const gross=STATE.scores[rndId]?.gross?.[pi]||[];
     let net=0,filled=0;
     c.pars.forEach((_,h)=>{ const g=parseInt(gross[h])||0; if(g){net+=g-strokesOnHole(chcp,c.si[h]);filled++;} });
@@ -1358,6 +1464,7 @@ function renderMatchScoring(r){
     ${fmt==='BB'?'Best net per hole counts. Win/halve/lose = 2/1/0 pts to home teams.':
       fmt==='SMP'?'4 singles matches. Win/halve/lose = 4/2/0 pts per player to their home team.':
       'Net match play hole-by-hole. Win/halve/lose = 2/1/0 pts to home teams.'}
+    ${(()=>{const t=getRoundTee(r.id);return `<span style="margin-left:6px;display:inline-flex;align-items:center;gap:4px"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${COURSES[r.course].tees[STATE.tees[r.id]??0].color};border:1px solid rgba(0,0,0,.15)"></span><strong>${t.name}</strong> tees · Par ${t.par} · ${t.rating}/${t.slope}</span>`;})()}
   </div>
   ${matchups.map(({matchup,origIdx})=>renderMatchCard(r,matchup,origIdx,fmt,c)).join('')}`;
 }
@@ -1370,7 +1477,7 @@ function renderMatchCard(r,matchup,matchIdx,fmt,c){
   const mdata=STATE.scores[r.id].matches[mkey];
   const allInMatch=[...pairA,...pairB];
   const chcps={};
-  allInMatch.forEach(pi=>chcps[pi]=courseHcp(STATE.players[pi].hi,r.slope,r.rating,r.par));
+  allInMatch.forEach(pi=>chcps[pi]=courseHcp(STATE.players[pi].hi,getRoundTee(r.id).slope,getRoundTee(r.id).rating,getRoundTee(r.id).par));
   const gross={};
   allInMatch.forEach(pi=>gross[pi]=mdata.gross[pi]||Array(holeCount).fill(''));
 
@@ -1589,7 +1696,7 @@ async function saveMatchResult(rndId,mkey,score,holesPlayed,holeCount,maxPts){
   let bbA=0,bbB=0;
   if(r.format==='BB' && mdata){
     const chcps={};
-    [...pairA,...pairB].forEach(pi=>chcps[pi]=courseHcp(STATE.players[pi].hi,r.slope,r.rating,r.par));
+    [...pairA,...pairB].forEach(pi=>chcps[pi]=courseHcp(STATE.players[pi].hi,getRoundTee(r.id).slope,getRoundTee(r.id).rating,getRoundTee(r.id).par));
     c.pars.forEach((_,h)=>{
       const aN=pairA.map(pi=>{const g=parseInt(mdata.gross?.[pi]?.[h]);return(!g||isNaN(g))?null:g-strokesOnHole(chcps[pi],c.si[h]);}).filter(x=>x!==null);
       const bN=pairB.map(pi=>{const g=parseInt(mdata.gross?.[pi]?.[h]);return(!g||isNaN(g))?null:g-strokesOnHole(chcps[pi],c.si[h]);}).filter(x=>x!==null);
@@ -1717,7 +1824,7 @@ function renderSkins(){
     const c = COURSES[r.course];
     const scores = STATE.scores[r.id];
     const chcps = {};
-    inPlayers.forEach(pi => chcps[pi] = courseHcp(STATE.players[pi].hi, r.slope, r.rating, r.par));
+    inPlayers.forEach(pi => chcps[pi] = courseHcp(STATE.players[pi].hi, getRoundTee(r.id).slope, getRoundTee(r.id).rating, getRoundTee(r.id).par));
 
     function getNet(pi, h){
       if(!scores) return null;
@@ -1825,7 +1932,7 @@ function toggleSbTrip(){ sbTrip=!sbTrip; renderScoreboard(); }
 
 function getPlayerRoundScores(pi, rndId){
   const r = ROUNDS[rndId], c = COURSES[r.course];
-  const chcp = courseHcp(STATE.players[pi].hi, r.slope, r.rating, r.par);
+  const chcp = courseHcp(STATE.players[pi].hi, getRoundTee(r.id).slope, getRoundTee(r.id).rating, getRoundTee(r.id).par);
   let gross=0, net=0, holes=0, parPlayed=0;
   const scores = STATE.scores[rndId];
   if(!scores) return null;
@@ -1884,7 +1991,7 @@ function renderSbRound(el, rndId){
 
   const rows = [0,1,2,3,4,5,6,7].map(pi=>{
     const s = getPlayerRoundScores(pi, rndId);
-    return {pi, ...( s || {gross:null,net:null,holes:0,chcp:courseHcp(STATE.players[pi].hi,r.slope,r.rating,r.par),grossToPar:null,netToPar:null})};
+    return {pi, ...( s || {gross:null,net:null,holes:0,chcp:courseHcp(STATE.players[pi].hi,getRoundTee(r.id).slope,getRoundTee(r.id).rating,getRoundTee(r.id).par),grossToPar:null,netToPar:null})};
   });
 
   const hasScores = rows.some(x=>x.gross!==null);
@@ -2043,7 +2150,7 @@ function renderSettlement(){
     const c = COURSES[r.course];
     const scores = STATE.scores[r.id];
     const chcps = {};
-    inPlayers.forEach(pi => chcps[pi] = courseHcp(STATE.players[pi].hi, r.slope, r.rating, r.par));
+    inPlayers.forEach(pi => chcps[pi] = courseHcp(STATE.players[pi].hi, getRoundTee(r.id).slope, getRoundTee(r.id).rating, getRoundTee(r.id).par));
 
     function getNet(pi, h){
       if(!scores) return null;
@@ -2253,6 +2360,7 @@ async function confirmReset(){
   STATE.draws    = Array(7).fill(null);
   STATE.drawLocks = Array(7).fill(false);
   STATE.roundLocks = Array(7).fill(false);
+  STATE.tees     = Array(7).fill(0);
   STATE.activeScoreRound = 0;
   seenNotifIds = new Set();
   saveLocal();
