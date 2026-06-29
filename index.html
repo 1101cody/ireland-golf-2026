@@ -355,13 +355,11 @@ if('serviceWorker' in navigator){
 <div class="nav">
 <div class="nav-inner">
   <button class="tab active" onclick="showPage('standings',this)">Standings</button>
-  <button class="tab" onclick="showPage('schedule',this)">Schedule</button>
-  <button class="tab" onclick="showPage('players',this)">Players</button>
   <button class="tab" onclick="showPage('scores',this)">Scores</button>
   <button class="tab" onclick="showPage('scoreboard',this)">Scoreboard</button>
-  <button class="tab" onclick="showPage('skins',this)">Skins</button>
   <button class="tab" onclick="showPage('settlement',this)">Money</button>
   <button class="tab" onclick="showPage('chat',this)" id="chatTab">Chat <span class="badge" id="chatBadge" style="display:none">0</span></button>
+  <button class="tab" onclick="showPage('admin',this)" id="adminTab">⚙ Admin</button>
 </div>
 </div>
 
@@ -383,30 +381,42 @@ if('serviceWorker' in navigator){
   </div>
 </div>
 
-<!-- SCHEDULE -->
-<div class="page" id="page-schedule">
-  <div class="info-box" style="margin-bottom:16px">
-    <strong>How draws work:</strong> Each round randomly assigns playing partners. Points won always credit your <strong>home roommate team</strong>. Randomize as many times as you like before locking.
+<!-- ADMIN (combines Players + Schedule) -->
+<div class="page" id="page-admin">
+  <div style="display:flex;gap:8px;margin-bottom:16px">
+    <button class="rnd-sel-btn active" id="adminSubPlayers" onclick="showAdminSection('players',this)">🏌 Players</button>
+    <button class="rnd-sel-btn" id="adminSubSchedule" onclick="showAdminSection('schedule',this)">📅 Schedule</button>
+    <button class="rnd-sel-btn" id="adminSubSkins" onclick="showAdminSection('skins',this)">🎰 Skins</button>
   </div>
-  <div id="scheduleCards"></div>
+  <div id="adminSectionPlayers">
+    <div class="card">
+      <div class="card-head">
+        <span class="card-title">🏌 Player Setup</span>
+        <button class="btn btn-gold btn-sm" onclick="saveAllPlayers()">💾 Save All</button>
+      </div>
+      <div class="card-body">
+        <div class="info-box" style="margin-bottom:14px">Enter each player's <strong>Handicap Index</strong>. Set the shared buy-in amount below — everyone pays the same.</div>
+        <div class="form-row" style="margin-bottom:16px;max-width:240px">
+          <div><label>💰 Buy-in per person CA$</label><input type="number" id="groupBuyin" value="100" step="5" min="0"/></div>
+        </div>
+        <div id="playerForms"></div>
+      </div>
+    </div>
+  </div>
+  <div id="adminSectionSchedule" style="display:none">
+    <div class="info-box" style="margin-bottom:16px">
+      <strong>How draws work:</strong> Each round randomly assigns playing partners. Points won always credit your <strong>home roommate team</strong>. Randomize as many times as you like before locking.
+    </div>
+    <div id="scheduleCards"></div>
+  </div>
+  <div id="adminSectionSkins" style="display:none">
+    <div id="skinsContent"></div>
+  </div>
 </div>
 
-<!-- PLAYERS -->
-<div class="page" id="page-players">
-  <div class="card">
-    <div class="card-head">
-      <span class="card-title">🏌 Player Setup</span>
-      <button class="btn btn-gold btn-sm" onclick="saveAllPlayers()">💾 Save All</button>
-    </div>
-    <div class="card-body">
-      <div class="info-box" style="margin-bottom:14px">Enter each player's <strong>Handicap Index</strong>. Set the shared buy-in amount below — everyone pays the same.</div>
-      <div class="form-row" style="margin-bottom:16px;max-width:240px">
-        <div><label>💰 Buy-in per person CA$</label><input type="number" id="groupBuyin" value="100" step="5" min="0"/></div>
-      </div>
-      <div id="playerForms"></div>
-    </div>
-  </div>
-</div>
+<!-- stub pages so getElementById('page-schedule') and getElementById('page-players') don't break -->
+<div class="page" id="page-schedule" style="display:none!important"></div>
+<div class="page" id="page-players" style="display:none!important"></div>
 
 <!-- SCORES -->
 <div class="page" id="page-scores">
@@ -427,10 +437,8 @@ if('serviceWorker' in navigator){
   <div id="sbContent"></div>
 </div>
 
-<!-- SKINS -->
-<div class="page" id="page-skins">
-  <div id="skinsContent"></div>
-</div>
+<!-- SKINS stub — content moved into Admin tab -->
+<div class="page" id="page-skins" style="display:none!important"></div>
 
 <!-- SETTLEMENT -->
 <div class="page" id="page-settlement">
@@ -862,12 +870,22 @@ function showPage(id, btn){
   if(btn) btn.classList.add('active');
   if(id==='chat'){ unreadChat=0; updateChatBadge(); loadChat(); }
   if(id==='standings') renderStandings();
-  if(id==='schedule') renderSchedule();
-  if(id==='players') renderPlayers();
   if(id==='scores') renderScores();
   if(id==='skins') renderSkins();
   if(id==='settlement') renderSettlement();
   if(id==='scoreboard') renderScoreboard();
+  if(id==='admin'){ renderPlayers(); renderSchedule(); renderSkins(); }
+}
+
+function showAdminSection(section, btn){
+  document.getElementById('adminSectionPlayers').style.display = section==='players' ? '' : 'none';
+  document.getElementById('adminSectionSchedule').style.display = section==='schedule' ? '' : 'none';
+  document.getElementById('adminSectionSkins').style.display = section==='skins' ? '' : 'none';
+  document.querySelectorAll('#adminSubPlayers,#adminSubSchedule,#adminSubSkins').forEach(b=>b.classList.remove('active'));
+  if(btn) btn.classList.add('active');
+  if(section==='schedule') renderSchedule();
+  if(section==='players') renderPlayers();
+  if(section==='skins') renderSkins();
 }
 
 function showAlert(msg,type){
@@ -1867,25 +1885,30 @@ function renderSkins(){
 
     // Build pot summary pills
     const totalSkinsFrac = inPlayers.reduce((a,pi)=>a+(skinWins[pi]||0), 0);
+    const totalSkinsCount = roundSkins.length;
+    const perSkinValue = (pot > 0 && totalSkinsCount > 0) ? pot / totalSkinsCount : 0;
     const potPills = inPlayers.length > 0
       ? inPlayers.map(pi => {
           const won = skinWins[pi] || 0;
           const wonFmt = won % 1 === 0 ? won : won.toFixed(1);
-          return `<span class="skins-pot-pill"><strong>${playerName(pi).split(' ')[0]}</strong> ${wonFmt} skin${won!==1?'s':''}</span>`;
+          const earnings = perSkinValue > 0 ? ` · CA$${(won * perSkinValue).toFixed(2)}` : '';
+          return `<span class="skins-pot-pill"><strong>${playerName(pi).split(' ')[0]}</strong> ${wonFmt} skin${won!==1?'s':''}${earnings}</span>`;
         }).join('')
       : '<span style="font-size:12px;color:var(--ink-lt);padding:4px 0">No one opted in yet</span>';
 
-    // Skin results rows
+    // Skin results rows — value per skin = pot / totalSkins (pot is total buy-in, divided equally across all skins)
+    const totalSkinsInRound = roundSkins.reduce((a, s) => a + 1, 0); // each hole = 1 skin (may be split)
     const skinRows = roundSkins.map(s => {
       const winnerNames = s.winners.map(pi =>
         `<span class="chip chip-${playerTeam(pi).color}" style="font-size:10px">${playerName(pi).split(' ')[0]}</span>`
       ).join(' ');
-      const shareAmt = stake > 0 ? (s.share * pot / (roundSkins.length)).toFixed(2) : '';
+      const skinValue = (pot > 0 && totalSkinsInRound > 0) ? pot / totalSkinsInRound : 0;
+      const shareAmt = skinValue > 0 ? (s.share * skinValue).toFixed(2) : '';
       const valFmt = s.share < 1 ? `½ each` : `×1`;
       return `<div class="skin-row">
         <span class="skin-hole">H${s.h+1}</span>
         <span>${winnerNames} <span style="font-size:11px;color:var(--ink-lt)">net ${s.net}</span>${s.tied?' <span style="font-size:10px;color:var(--halve)">(split)</span>':''}</span>
-        <span class="skin-val">💰 ${valFmt}${stake>0?` CA$${(s.share*stake).toFixed(2)}`:''}
+        <span class="skin-val">💰 ${valFmt}${shareAmt?` CA$${shareAmt}`:''}
         </span>
       </div>`;
     }).join('');
@@ -1904,7 +1927,7 @@ function renderSkins(){
         <div class="skins-stake-row">
           <span>CA$</span>
           <input type="number" min="0" step="5" value="${stake}" ${roundLocked?'disabled style="opacity:.6"':''} onchange="setSkinStake(${r.id},this.value)" style="width:60px"/>
-          <span>per skin</span>
+          <span>buy-in</span>
           ${inPlayers.length>0&&pot>0?`<span class="pts-badge" style="margin-left:4px">Pot: CA$${pot}</span>`:''}
           ${roundLocked?`<span class="skins-locked-label">🔒 Locked</span>`:''}
         </div>
