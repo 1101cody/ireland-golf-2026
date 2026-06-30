@@ -1714,6 +1714,10 @@ function renderScoresV2(){
         dividerBefore = `<div class="sv2-side-divider"><span>VS</span></div>`;
       }
     }
+    const grossVal = gross || par;
+    const netVal = gross ? gross - strokes : par - strokes;
+    const netRelCls = sv2RelClass(gross ? gross - strokes : 0, par);
+    const netRelLbl = gross ? sv2RelLabel(gross - strokes, par) : '';
     return `${dividerBefore}<div class="sv2-player-row${isMe?' sv2-me':''}">
       <div class="sv2-player-info">
         <div class="sv2-player-name">${p.name}${isMe?`<span class="sv2-player-badge">YOU</span>`:''}</div>
@@ -1721,11 +1725,16 @@ function renderScoresV2(){
       </div>
       <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
         ${strokeDots}
-        <div class="sv2-stepper">
+        <div style="display:flex;align-items:stretch;gap:0">
           <button class="sv2-minus" onclick="sv2DecrScore(${rndId},${pi},${hole})" ${locked?'disabled':''}>−</button>
-          <div class="sv2-score-display ${relCls}" onclick="sv2TapScore(${rndId},${pi},${hole})">
-            <div class="sv2-score-num">${gross || par}</div>
-            ${gross ? `<div class="sv2-score-rel ${relCls}">${relLbl}</div>` : '<div class="sv2-score-rel par" style="font-size:9px">tap=par</div>'}
+          <div style="display:flex;flex-direction:column;border-top:1.5px solid var(--cream-dkr);border-bottom:1.5px solid var(--cream-dkr)">
+            <div class="sv2-score-display ${relCls}" onclick="sv2TapScore(${rndId},${pi},${hole})" style="border:none;height:38px;min-height:unset;width:62px">
+              <div class="sv2-score-num" style="font-size:22px">${grossVal}</div>
+              ${gross ? `<div class="sv2-score-rel ${relCls}" style="font-size:8px">${relLbl}</div>` : '<div class="sv2-score-rel par" style="font-size:8px">tap=par</div>'}
+            </div>
+            <div style="width:62px;height:22px;display:flex;align-items:center;justify-content:center;gap:4px;border-top:1px dashed var(--cream-dkr);background:${gross?'rgba(0,0,0,.03)':'var(--cream-dk)'};cursor:pointer" onclick="sv2TapScore(${rndId},${pi},${hole})">
+              ${gross ? `<span style="font-size:9px;color:var(--ink-lt);font-weight:600">net</span><span style="font-size:12px;font-weight:700;color:var(--ink);font-family:'Playfair Display',serif">${netVal}</span><span style="font-size:9px;font-weight:700;color:${netRelCls==='birdie'?'var(--won)':netRelCls==='eagle'?'#1a6b8a':netRelCls==='bogey'?'#b05a00':netRelCls==='double'?'var(--lost)':'var(--ink-lt)'}">${netRelLbl}</span>` : `<span style="font-size:9px;color:var(--ink-lt)">net —</span>`}
+            </div>
           </div>
           <button class="sv2-plus" onclick="sv2IncrScore(${rndId},${pi},${hole})" ${locked?'disabled':''}>+</button>
         </div>
@@ -1934,9 +1943,9 @@ function calculateLiveStatus(rndId){
       const chcp = courseHcp(STATE.players[pi].hi, getRoundTee(rndId).slope, getRoundTee(rndId).rating, getRoundTee(rndId).par);
       const gross = STATE.scores[rndId]?.gross?.[pi] || [];
       let netTotal=0, grossTotal=0, holesPlayed=0;
-      c.pars.forEach((_,h) => {
+      c.pars.forEach((par,h) => {
         const g = parseInt(gross[h])||0;
-        if(g){ netTotal += g - strokesOnHole(chcp, c.si[h]); grossTotal += g; holesPlayed++; }
+        if(g){ netTotal += (g - strokesOnHole(chcp, c.si[h])) - par; grossTotal += g; holesPlayed++; }
       });
       return { pi, chcp, netTotal, grossTotal, holesPlayed };
     }).sort((a,b) => {
@@ -2603,7 +2612,7 @@ function renderLiveScorecard(rndId){
     const isMe = pi === meSlot; const t = playerTeam(pi);
     const expandId = `sc-expand-${rndId}-${pi}`;
     let netTotal=0, holesPlayed=0;
-    c.pars.forEach((_,h)=>{ let g=null; if(r.format==='NS') g=parseInt(STATE.scores[rndId]?.gross?.[pi]?.[h])||0; else if(STATE.scores[rndId]?.matches){ for(const m of Object.values(STATE.scores[rndId].matches)){const v=parseInt(m.gross?.[pi]?.[h]);if(v>0){g=v;break;}}} if(g){netTotal+=g-strokesOnHole(chcp,c.si[h]);holesPlayed++;} });
+    c.pars.forEach((par,h)=>{ let g=null; if(r.format==='NS') g=parseInt(STATE.scores[rndId]?.gross?.[pi]?.[h])||0; else if(STATE.scores[rndId]?.matches){ for(const m of Object.values(STATE.scores[rndId].matches)){const v=parseInt(m.gross?.[pi]?.[h]);if(v>0){g=v;break;}}} if(g){netTotal+=(g-strokesOnHole(chcp,c.si[h]))-par;holesPlayed++;} });
     const parStr = netTotal === 0 ? 'E' : netTotal > 0 ? `+${netTotal}` : `${netTotal}`;
     const grossForScorecard = (() => { let g=0; c.pars.forEach((_,h)=>{ let sc=null; if(r.format==='NS') sc=parseInt(STATE.scores[rndId]?.gross?.[pi]?.[h])||0; else if(STATE.scores[rndId]?.matches){ for(const m of Object.values(STATE.scores[rndId].matches)){const v=parseInt(m.gross?.[pi]?.[h]);if(v>0){sc=v;break;}}} if(sc) g+=sc; }); return g; })();
     const netStr = holesPlayed ? `${grossForScorecard} (${parStr}) net` : '—';
@@ -2625,18 +2634,57 @@ function renderLiveTrip(){
 function livePlayerScorecard(rndId, pi){
   const r = ROUNDS[rndId]; const c = COURSES[r.course];
   const chcp = courseHcp(STATE.players[pi].hi, getRoundTee(rndId).slope, getRoundTee(rndId).rating, getRoundTee(rndId).par);
-  let cells = '', total=0, netTotal=0;
+  let grossCells = '', netCells = '', grossTotal=0, netTotal=0, netToPar=0;
   c.pars.forEach((par,h)=>{
     let g=null;
     if(r.format==='NS') g=parseInt(STATE.scores[rndId]?.gross?.[pi]?.[h])||0;
     else if(STATE.scores[rndId]?.matches){ for(const m of Object.values(STATE.scores[rndId].matches)){const v=parseInt(m.gross?.[pi]?.[h]);if(v>0){g=v;break;}}}
-    const st=strokesOnHole(chcp,c.si[h]); const net=g?g-st:0; const rel=g?g-par:null;
-    const bgClr=rel===null?'#f5f5f5':rel<=-2?'#e8f7fb':rel===-1?'#d1fae5':rel===0?'#fff':rel===1?'#fff8ee':'#fee2e2';
-    const txtClr=rel===null?'#bbb':rel<=-2?'#1a6b8a':rel===-1?'var(--won)':rel===0?'var(--ink)':rel===1?'#b05a00':'var(--lost)';
-    if(g){total+=g;netTotal+=net;}
-    cells+=`<td style="text-align:center;padding:5px 3px;background:${bgClr};color:${txtClr};font-weight:${g?700:400};font-size:12px">${g||'—'}</td>`;
+    const st = strokesOnHole(chcp, c.si[h]);
+    const net = g ? g - st : null;
+    const grossRel = g ? g - par : null;
+    const netRel   = net !== null ? net - par : null;
+    const grossBg  = grossRel===null?'#f5f5f5':grossRel<=-2?'#e8f7fb':grossRel===-1?'#d1fae5':grossRel===0?'#fff':grossRel===1?'#fff8ee':'#fee2e2';
+    const grossTxt = grossRel===null?'#bbb':grossRel<=-2?'#1a6b8a':grossRel===-1?'var(--won)':grossRel===0?'var(--ink)':grossRel===1?'#b05a00':'var(--lost)';
+    const netBg    = netRel===null?'#f5f5f5':netRel<=-2?'#e8f7fb':netRel===-1?'#d1fae5':netRel===0?'#fff':netRel===1?'#fff8ee':'#fee2e2';
+    const netTxt   = netRel===null?'#bbb':netRel<=-2?'#1a6b8a':netRel===-1?'var(--won)':netRel===0?'var(--ink)':netRel===1?'#b05a00':'var(--lost)';
+    if(g){ grossTotal += g; netTotal += net; netToPar += net - par; }
+    grossCells += `<td style="text-align:center;padding:4px 2px;background:${grossBg};color:${grossTxt};font-weight:${g?700:400};font-size:12px">${g||'—'}</td>`;
+    netCells   += `<td style="text-align:center;padding:4px 2px;background:${netBg};color:${netTxt};font-weight:${net!==null?700:400};font-size:12px;border-top:1px dashed #e5e0d8">${net!==null?net:'—'}</td>`;
   });
-  return `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px"><thead><tr><th style="padding:4px 6px;text-align:left;background:var(--green);color:var(--gold-lt)">HCP ${chcp}</th>${c.pars.map((_,h)=>`<th style="padding:4px 2px;text-align:center;background:var(--green);color:var(--gold-lt)">${h+1}</th>`).join('')}<th style="padding:4px 6px;background:var(--green);color:var(--gold-lt)">Net</th></tr></thead><tbody><tr><td style="padding:5px 6px;font-size:10px;color:var(--ink-lt)">Par</td>${c.pars.map(p=>`<td style="text-align:center;padding:5px 3px;font-size:10px;color:var(--ink-lt)">${p}</td>`).join('')}<td></td></tr><tr><td style="padding:5px 6px;font-weight:600">${playerName(pi).split(' ')[0]}</td>${cells}<td style="padding:5px 6px;font-weight:700;color:var(--green)">${netTotal||'—'}</td></tr></tbody></table></div>`;
+  const netParStr = netToPar===0?'E':netToPar>0?`+${netToPar}`:`${netToPar}`;
+  // Hole header with SI dots
+  const holeHeaders = c.pars.map((par,h)=>{
+    const st = strokesOnHole(chcp, c.si[h]);
+    const dots = st===2
+      ? `<div style="display:flex;justify-content:center;gap:2px;margin-top:2px"><div style="width:4px;height:4px;border-radius:50%;background:var(--gold)"></div><div style="width:4px;height:4px;border-radius:50%;background:var(--gold)"></div></div>`
+      : st===1 ? `<div style="display:flex;justify-content:center;margin-top:2px"><div style="width:4px;height:4px;border-radius:50%;background:var(--gold)"></div></div>` : `<div style="height:6px"></div>`;
+    return `<th style="padding:3px 2px;text-align:center;background:var(--green);color:var(--gold-lt);font-size:11px">${h+1}${dots}</th>`;
+  }).join('');
+  const name = playerName(pi).split(' ')[0];
+  return `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px">
+    <thead><tr>
+      <th style="padding:4px 6px;text-align:left;background:var(--green);color:var(--gold-lt);white-space:nowrap">HCP ${chcp}</th>
+      ${holeHeaders}
+      <th style="padding:4px 6px;background:var(--green);color:var(--gold-lt);white-space:nowrap">Total</th>
+    </tr></thead>
+    <tbody>
+      <tr>
+        <td style="padding:4px 6px;font-size:10px;color:var(--ink-lt)">Par</td>
+        ${c.pars.map(p=>`<td style="text-align:center;padding:4px 2px;font-size:10px;color:var(--ink-lt)">${p}</td>`).join('')}
+        <td style="padding:4px 6px;font-size:10px;color:var(--ink-lt)">${c.pars.reduce((a,b)=>a+b,0)}</td>
+      </tr>
+      <tr>
+        <td style="padding:4px 6px;font-weight:600;white-space:nowrap">${name} <span style="font-size:9px;color:var(--ink-lt);font-weight:400">gross</span></td>
+        ${grossCells}
+        <td style="padding:4px 6px;font-weight:700;color:var(--ink);white-space:nowrap">${grossTotal||'—'}</td>
+      </tr>
+      <tr style="background:rgba(0,0,0,.02)">
+        <td style="padding:4px 6px;font-weight:600;white-space:nowrap;font-size:10px;color:var(--ink-lt)">${name} <span style="font-weight:400">net</span></td>
+        ${netCells}
+        <td style="padding:4px 6px;font-weight:700;color:var(--green);white-space:nowrap">${grossTotal ? `${netTotal} (${netParStr})` : '—'}</td>
+      </tr>
+    </tbody>
+  </table></div>`;
 }
 
 function lsbToggleExpand(id){ const el=document.getElementById(id); if(el) el.style.display=el.style.display==='none'?'':'none'; }
