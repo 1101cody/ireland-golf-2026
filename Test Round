@@ -1,0 +1,1018 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="Battlefield"/>
+<meta name="theme-color" content="#1a3a2a"/>
+<title>Battlefield · Four-Ball 2025</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,600;0,700;1,600&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<style>
+:root{
+  --gold:#c9a84c;--gold-lt:#f0d98a;--gold-dk:#8a6a1f;
+  --green:#1a3a2a;--green-md:#2d5a3d;--green-lt:#3d7a52;
+  --cream:#f8f5ee;--cream-dk:#ede8dc;--cream-dkr:#d8d0bc;
+  --ink:#1c1a16;--ink-md:#4a4538;--ink-lt:#7a7060;
+  --won:#1a6b2a;--won-bg:#d4edda;--lost:#8b2020;--lost-bg:#f8d7da;
+  --halve:#7a6000;--halve-bg:#fff3cd;
+  --a:#1e3a8a;--a-bg:#dbeafe;--b:#7a2020;--b-bg:#fce4e4;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'DM Sans',sans-serif;background:var(--cream);color:var(--ink);min-height:100vh}
+button{cursor:pointer;font-family:inherit}
+input{font-family:inherit}
+
+/* HERO */
+.hero{background:var(--green);padding:20px 16px 16px;overflow:hidden;position:relative}
+.hero::before{content:'';position:absolute;inset:0;background:url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23c9a84c' fill-opacity='0.05'%3E%3Ccircle cx='30' cy='30' r='4'/%3E%3C/g%3E%3C/svg%3E")}
+.hero-inner{max-width:900px;margin:0 auto;position:relative}
+.hero-title{font-family:'Playfair Display',serif;font-size:26px;color:var(--gold-lt);line-height:1.1}
+.hero-sub{font-size:11px;color:rgba(240,217,138,.5);letter-spacing:.1em;text-transform:uppercase;margin-top:4px}
+.hero-pills{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.hero-pill{background:rgba(255,255,255,.07);border:1px solid rgba(201,168,76,.2);border-radius:20px;padding:4px 10px;font-size:11px;color:rgba(240,217,138,.7)}
+.hero-pill strong{color:var(--gold-lt)}
+
+/* NAV */
+.nav{background:var(--green-md);border-bottom:2px solid var(--gold-dk);overflow-x:auto;-webkit-overflow-scrolling:touch}
+.nav-inner{max-width:900px;margin:0 auto;display:flex}
+.tab{padding:12px 16px;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:rgba(240,217,138,.45);background:none;border:none;border-bottom:2px solid transparent;margin-bottom:-2px;white-space:nowrap;transition:all .2s}
+.tab.active{color:var(--gold-lt);border-bottom-color:var(--gold)}
+
+/* LAYOUT */
+.main{max-width:900px;margin:0 auto;padding:16px}
+.page{display:none}.page.active{display:block}
+
+/* CARDS */
+.card{background:#fff;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.06);margin-bottom:14px;overflow:hidden}
+.card-head{padding:12px 16px;border-bottom:1px solid var(--cream-dk);display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.card-title{font-family:'Playfair Display',serif;font-size:17px;color:var(--green)}
+
+/* BUTTONS */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600;border:none;transition:all .18s;cursor:pointer}
+.btn-gold{background:var(--gold);color:#fff}.btn-green{background:var(--green);color:#fff}
+.btn-outline{background:transparent;border:1.5px solid var(--cream-dkr);color:var(--ink-md)}
+.btn-danger{background:#c0392b;color:#fff}
+.btn-sm{padding:5px 10px;font-size:11px}
+.btn-block{width:100%;justify-content:center;padding:13px}
+
+/* CHIPS */
+.chip{display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600}
+.chip-a{background:var(--a-bg);color:var(--a)}
+.chip-b{background:var(--b-bg);color:var(--b)}
+.chip-solo{background:#e8f5e9;color:#1b5e20}
+
+/* SCORE ENTRY */
+.hole-nav{background:var(--green);color:var(--gold-lt);border-radius:12px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between}
+.hole-nav-info{text-align:center}
+.hole-num{font-family:'Playfair Display',serif;font-size:22px;line-height:1}
+.hole-meta{font-size:10px;opacity:.65;margin-top:2px}
+.hole-btn{background:rgba(255,255,255,.12);border:none;color:var(--gold-lt);width:38px;height:38px;border-radius:8px;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.hole-btn:disabled{opacity:.3;cursor:not-allowed}
+.hole-progress{height:3px;background:rgba(255,255,255,.15);border-radius:2px;margin-top:8px;overflow:hidden}
+.hole-progress-fill{height:100%;background:var(--gold);border-radius:2px;transition:width .3s}
+
+/* PLAYER SCORE ROW */
+.pscore-card{background:#fff;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.06);margin-bottom:10px;overflow:hidden}
+.pscore-row{display:flex;align-items:center;gap:10px;padding:12px 14px}
+.pscore-me{border:2px solid var(--gold);background:rgba(201,168,76,.04)}
+.pscore-info{flex:1}
+.pscore-name{font-weight:600;font-size:15px}
+.pscore-meta{font-size:11px;color:var(--ink-lt);margin-top:2px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.stroke-dots{display:flex;gap:3px;align-items:center}
+.stroke-dot{width:6px;height:6px;border-radius:50%;background:var(--gold);display:inline-block}
+
+/* STEPPER */
+.stepper-wrap{display:flex;flex-direction:column;align-items:center;gap:3px}
+.stepper{display:flex;align-items:stretch;border-radius:10px;overflow:hidden;border:1.5px solid var(--cream-dkr)}
+.stepper-btn{background:var(--cream-dk);border:none;width:38px;font-size:20px;font-weight:300;color:var(--ink-md);cursor:pointer;transition:background .15s}
+.stepper-btn:hover:not(:disabled){background:var(--cream-dkr)}
+.stepper-btn:disabled{opacity:.35;cursor:not-allowed}
+.score-cell{display:flex;flex-direction:column;align-items:center;justify-content:center;width:56px;cursor:pointer;background:var(--cream);border-left:1px solid var(--cream-dkr);border-right:1px solid var(--cream-dkr)}
+.score-gross{font-family:'Playfair Display',serif;font-size:21px;font-weight:700;line-height:1.1;padding:4px 0 0}
+.score-net-line{width:100%;display:flex;align-items:center;justify-content:center;gap:3px;border-top:1px dashed var(--cream-dkr);padding:2px 0;background:rgba(0,0,0,.025)}
+.score-net-lbl{font-size:8px;color:var(--ink-lt);font-weight:600}
+.score-net-val{font-size:11px;font-weight:700;color:var(--ink)}
+.score-rel{font-size:8px;font-weight:700}
+.score-tap{font-size:8px;color:var(--ink-lt);padding:6px 0}
+/* score colours */
+.sc-eagle{color:#1a6b8a;background:#e0f4fb!important}
+.sc-birdie{color:var(--won);background:#d1fae5!important}
+.sc-par{color:var(--ink);background:var(--cream)!important}
+.sc-bogey{color:#b05a00;background:#fff8ee!important}
+.sc-double{color:var(--lost);background:#fee2e2!important}
+
+/* MATCH STATUS BAR */
+.match-bar{background:var(--green);color:var(--gold-lt);border-radius:12px;padding:12px 16px;margin-bottom:12px;text-align:center}
+.match-bar-teams{font-size:12px;margin-bottom:6px;display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap}
+.match-bar-score{font-family:'Playfair Display',serif;font-size:24px;font-weight:700;line-height:1}
+.match-bar-sub{font-size:11px;opacity:.6;margin-top:3px}
+.match-bar-hole{display:flex;justify-content:space-around;background:rgba(0,0,0,.18);border-radius:8px;padding:7px 10px;margin-top:8px;font-size:12px}
+.match-bar-hole-side{text-align:center;flex:1}
+.match-bar-hole-side strong{font-family:'Playfair Display',serif;font-size:15px;color:var(--gold-lt);display:block}
+
+/* SETUP — team cards */
+.team-opt{border:2px solid var(--cream-dkr);border-radius:12px;padding:12px;margin-bottom:10px;cursor:pointer;transition:all .2s}
+.team-opt.selected{border-color:var(--gold);background:rgba(201,168,76,.05)}
+.team-opt-header{font-weight:700;font-size:13px;margin-bottom:6px;display:flex;align-items:center;gap:6px}
+.team-opt-players{display:flex;gap:6px;flex-wrap:wrap}
+
+/* LIVE — BB scorecard table */
+.bb-table{width:100%;border-collapse:collapse;font-size:12px}
+.bb-table td,.bb-table th{text-align:center;padding:0;min-width:24px}
+
+/* SKINS */
+.skins-opt-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding:12px 14px;border-bottom:1px solid var(--cream-dk)}
+.skins-tog{border:2px solid var(--cream-dkr);border-radius:10px;padding:8px 4px;text-align:center;cursor:pointer;transition:all .2s}
+.skins-tog.in{border-color:var(--gold);background:rgba(201,168,76,.08)}
+.skins-tog-name{font-size:12px;font-weight:600;margin-top:3px}
+.skins-tog-status{font-size:9px;color:var(--ink-lt);margin-top:2px}
+.skins-tog.in .skins-tog-status{color:var(--won);font-weight:700}
+.skin-row{display:flex;align-items:center;justify-content:space-between;padding:9px 14px;border-bottom:1px solid var(--cream-dk);font-size:13px}
+.skin-row:last-child{border-bottom:none}
+.skin-row-head{background:var(--cream-dk)}
+.skin-row-head span{font-size:10px;font-weight:700;color:var(--ink-lt);text-transform:uppercase;letter-spacing:.06em}
+.skin-hole{font-family:'Playfair Display',serif;font-size:16px;color:var(--ink-lt);min-width:28px;text-align:center}
+.skin-hole-head{font-family:'DM Sans',sans-serif!important;font-size:10px!important}
+.pot-pill{background:var(--cream-dk);border-radius:20px;padding:4px 10px;font-size:12px;margin:3px}
+
+/* IDENTITY */
+.id-overlay{position:fixed;inset:0;background:rgba(26,58,42,.96);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px}
+.id-box{background:var(--cream);border-radius:18px;padding:28px;width:100%;max-width:360px}
+.id-box h2{font-family:'Playfair Display',serif;color:var(--green);margin-bottom:16px;font-size:22px}
+.player-pick-btn{width:100%;padding:12px;text-align:left;background:#fff;border:1.5px solid var(--cream-dkr);border-radius:10px;margin-bottom:8px;cursor:pointer;display:flex;align-items:center;gap:10px;font-size:14px;font-weight:600;transition:all .2s}
+.player-pick-btn:hover{border-color:var(--gold);background:rgba(201,168,76,.04)}
+.player-pick-btn .meta{font-size:11px;color:var(--ink-lt);font-weight:400;margin-top:1px}
+
+/* RESET OVERLAY */
+.reset-overlay{position:fixed;inset:0;background:rgba(26,58,42,.95);z-index:10000;display:none;align-items:center;justify-content:center;padding:20px}
+.reset-box{background:var(--cream);border-radius:18px;padding:24px;width:100%;max-width:340px}
+
+/* TOAST */
+.toast{position:fixed;top:16px;left:50%;transform:translateX(-50%);background:var(--green);color:var(--gold-lt);padding:12px 20px;border-radius:12px;font-size:14px;font-weight:600;box-shadow:0 4px 20px rgba(0,0,0,.3);z-index:9999;max-width:320px;text-align:center;border:1px solid var(--gold-dk);animation:slideDown .3s ease}
+@keyframes slideDown{from{transform:translateX(-50%) translateY(-20px);opacity:0}to{transform:translateX(-50%) translateY(0);opacity:1}}
+
+/* EMPTY */
+.empty-state{text-align:center;padding:32px;color:var(--ink-lt);font-size:13px}
+
+/* UTIL */
+.divider{text-align:center;margin:6px 0}
+.divider span{font-size:10px;font-weight:700;color:var(--ink-lt);background:var(--cream-dk);padding:2px 10px;border-radius:20px;letter-spacing:.08em}
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="hero-inner">
+    <div class="hero-title">⛳ Battlefield Four-Ball</div>
+    <div class="hero-sub">Legends on the Niagara · Blue/White Tees</div>
+    <div class="hero-pills">
+      <div class="hero-pill">Par <strong>72</strong></div>
+      <div class="hero-pill">Rating <strong>69.8</strong></div>
+      <div class="hero-pill">Slope <strong>126</strong></div>
+      <div class="hero-pill" id="heroPill">No teams drawn yet</div>
+    </div>
+    <div style="margin-top:10px;font-size:11px;color:rgba(240,217,138,.4)" id="meDisplay"></div>
+  </div>
+</div>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <button class="tab active" id="tab-score" onclick="showPage('score',this)">⛳ Score</button>
+    <button class="tab" id="tab-live" onclick="showPage('live',this)">📊 Live</button>
+    <button class="tab" id="tab-skins" onclick="showPage('skins',this)">🏆 Skins</button>
+    <button class="tab" id="tab-setup" onclick="showPage('setup',this)">⚙️ Setup</button>
+  </div>
+</nav>
+
+<div class="main">
+
+  <!-- SCORE PAGE -->
+  <div class="page active" id="page-score">
+    <div id="scoreContent"></div>
+  </div>
+
+  <!-- LIVE PAGE -->
+  <div class="page" id="page-live">
+    <div id="liveContent"></div>
+  </div>
+
+  <!-- SKINS PAGE -->
+  <div class="page" id="page-skins">
+    <div id="skinsContent"></div>
+  </div>
+
+  <!-- SETUP PAGE -->
+  <div class="page" id="page-setup">
+    <div id="setupContent"></div>
+  </div>
+
+</div>
+
+<!-- Identity picker -->
+<div class="id-overlay" id="idOverlay" style="display:none">
+  <div class="id-box">
+    <h2>👋 Who are you?</h2>
+    <p style="font-size:13px;color:var(--ink-lt);margin-bottom:16px">Tap your name — your score entry will be highlighted.</p>
+    <div id="idButtons">
+      <button class="player-pick-btn" onclick="pickMe(0)"><span style="font-size:22px">👤</span><div><div>Jim</div><div class="meta">HI 6.6</div></div></button>
+      <button class="player-pick-btn" onclick="pickMe(1)"><span style="font-size:22px">👤</span><div><div>Mike</div><div class="meta">HI 16.1</div></div></button>
+      <button class="player-pick-btn" onclick="pickMe(2)"><span style="font-size:22px">👤</span><div><div>Greg</div><div class="meta">HI 12.8</div></div></button>
+      <button class="player-pick-btn" onclick="pickMe(3)"><span style="font-size:22px">👤</span><div><div>Cody</div><div class="meta">HI 12.1</div></div></button>
+    </div>
+  </div>
+</div>
+
+<!-- Reset confirm -->
+<div class="reset-overlay" id="resetOverlay">
+  <div class="reset-box">
+    <h2 style="font-family:'Playfair Display',serif;color:var(--green);margin-bottom:10px">Reset Everything?</h2>
+    <p style="font-size:13px;color:var(--ink-lt);margin-bottom:18px">This clears all scores, teams, and skins data. Cannot be undone.</p>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-danger" onclick="doReset()" style="flex:1;justify-content:center">Reset</button>
+      <button class="btn btn-outline" onclick="closeReset()" style="flex:1;justify-content:center">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════
+// COURSE DATA — Battlefield (Legends on the Niagara)
+// Blue/White tees: 6498 yds · Rating 69.8 · Slope 126 · Par 72
+// Source: official Niagara Parks scorecard (2023)
+// ═══════════════════════════════════════════════════
+const COURSE = {
+  name: 'Battlefield',
+  tees: 'Blue/White',
+  rating: 69.8,
+  slope: 126,
+  par: 72,
+  pars: [5,4,3,4,4,5,4,3,4, 4,5,4,4,3,4,4,3,5],
+  si:   [11,3,13,9,17,7,5,15,1, 14,12,16,4,18,8,2,10,6],
+};
+
+// ═══════════════════════════════════════════════════
+// PLAYERS — hardcoded with real handicap indexes
+// ═══════════════════════════════════════════════════
+const PLAYERS = [
+  { name: 'Jim',  hi: 6.6  },
+  { name: 'Mike', hi: 16.1 },
+  { name: 'Greg', hi: 12.8 },
+  { name: 'Cody', hi: 12.1 },
+];
+
+// ═══════════════════════════════════════════════════
+// HANDICAP CALCULATIONS
+// Playing off the low golfer (Jim ~7) — each player
+// receives the difference from their course handicap.
+// ═══════════════════════════════════════════════════
+function courseHcp(hi){
+  return Math.round(hi * (COURSE.slope / 113) + (COURSE.rating - COURSE.par));
+}
+function allCourseHcps(){
+  return PLAYERS.map(p => courseHcp(p.hi));
+}
+function playingHcps(){
+  const chcps = allCourseHcps();
+  const low = Math.min(...chcps);
+  return chcps.map(c => c - low);
+}
+function strokesOnHole(playingHcp, si){
+  if(playingHcp <= 0) return 0;
+  let s = Math.floor(playingHcp / 18);
+  if(si <= (playingHcp % 18)) s++;
+  return s;
+}
+
+// Pre-compute playing handicaps once
+const CHCPS = allCourseHcps();   // [7, 18, 14, 14]
+const PHCPS = playingHcps();     // [0, 11, 7, 7]
+
+// ═══════════════════════════════════════════════════
+// STATE — persisted to localStorage
+// ═══════════════════════════════════════════════════
+const STORAGE_KEY = 'battlefield_v1';
+
+function defaultState(){
+  return {
+    me: null,                               // player index 0-3
+    teams: null,                            // [[pi,pi],[pi,pi]] or null
+    scores: Array(18).fill(null).map(()=>[null,null,null,null]),
+    skinsIn: [true,true,true,true],
+    skinsBuyin: 20,
+    finalized: false,
+  };
+}
+
+let S = defaultState();
+
+function saveState(){
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(S));
+}
+function loadState(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(raw) S = Object.assign(defaultState(), JSON.parse(raw));
+  }catch(e){}
+}
+
+// ═══════════════════════════════════════════════════
+// SCORING HELPERS
+// ═══════════════════════════════════════════════════
+function getGross(pi, h){ return S.scores[h][pi]; }
+function getNet(pi, h){
+  const g = getGross(pi, h);
+  if(!g) return null;
+  return g - strokesOnHole(PHCPS[pi], COURSE.si[h]);
+}
+function relClass(score, par){
+  if(!score) return '';
+  const d = score - par;
+  if(d <= -2) return 'sc-eagle';
+  if(d === -1) return 'sc-birdie';
+  if(d === 0)  return 'sc-par';
+  if(d === 1)  return 'sc-bogey';
+  return 'sc-double';
+}
+function relLabel(score, par){
+  if(!score) return '';
+  const d = score - par;
+  if(d <= -2) return '🦅';
+  if(d === -1) return '🐦';
+  if(d === 0)  return 'Par';
+  if(d === 1)  return 'Bog';
+  if(d === 2)  return '+2';
+  return `+${d}`;
+}
+
+// Four-Ball: best net from each 2-player side on a hole
+function bbHoleResult(h, pairA, pairB){
+  const aN = pairA.map(pi=>getNet(pi,h)).filter(x=>x!==null);
+  const bN = pairB.map(pi=>getNet(pi,h)).filter(x=>x!==null);
+  if(!aN.length || !bN.length) return null;
+  const bA = Math.min(...aN), bB = Math.min(...bN);
+  return { bestA: bA, bestB: bB, won: bA < bB ? 'A' : bB < bA ? 'B' : 'H' };
+}
+
+// Full match status
+function computeMatch(){
+  if(!S.teams) return null;
+  const [pairA, pairB] = S.teams;
+  let score = 0, played = 0, over = false, overReason = '';
+  const log = [];
+  COURSE.pars.forEach((par, h)=>{
+    if(over) return;
+    const res = bbHoleResult(h, pairA, pairB);
+    if(!res) return;
+    played++;
+    const rem = 18 - played;
+    if(res.won === 'A') score++;
+    else if(res.won === 'B') score--;
+    if(Math.abs(score) > rem){ over = true; overReason = `${Math.abs(score)}&${rem}`; }
+    log.push({ h, hole: h+1, par, ...res, running: score });
+  });
+  const rem = 18 - played;
+  let label = 'No scores yet', cls = 'sq';
+  const [la, lb] = ['Team A','Team B'];
+  if(played > 0){
+    if(over){
+      label = `${score>0?la:lb} wins ${overReason}`;
+      cls = score > 0 ? 'up' : 'dn';
+    } else if(played === 18){
+      if(score>0){label=`${la} wins ${score} UP`;cls='up';}
+      else if(score<0){label=`${lb} wins ${Math.abs(score)} UP`;cls='dn';}
+      else{label='Match Halved';cls='sq';}
+    } else {
+      if(score>0){
+        label = rem===score ? `${la} Dormie ${score}` : `${la} ${score} Up`;
+        cls = 'up';
+      } else if(score<0){
+        label = rem===Math.abs(score) ? `${lb} Dormie ${Math.abs(score)}` : `${lb} ${Math.abs(score)} Up`;
+        cls = 'dn';
+      } else { label = 'All Square'; cls = 'sq'; }
+    }
+  }
+  return { pairA, pairB, score, played, rem, over, overReason, log, label, cls };
+}
+
+// Skins computation
+function computeSkins(){
+  const inIdx = PLAYERS.map((_,i)=>i).filter(i=>S.skinsIn[i]);
+  if(inIdx.length < 2) return { inIdx, pot:0, wins:{}, paid:[], pushed:[] };
+  const pot = inIdx.length * S.skinsBuyin;
+  const pending = []; // holes pushed forward
+  const wins = {};    // pi -> count
+  const paid = [];
+  const pushed = [];
+
+  COURSE.pars.forEach((par, h)=>{
+    const nets = inIdx.map(pi=>({ pi, net: getNet(pi,h) })).filter(x=>x.net!==null);
+    if(nets.length < 2){ if(pending.length>0) pending.push(h); return; }
+    const best = Math.min(...nets.map(x=>x.net));
+    const winners = nets.filter(x=>x.net===best);
+    if(winners.length > 1){
+      pending.push(h);
+      pushed.push({ h, net: best });
+    } else {
+      const w = winners[0].pi;
+      const holesWon = [...pending, h];
+      wins[w] = (wins[w]||0) + holesWon.length;
+      holesWon.forEach(wh => paid.push({ h: wh, winner: w, net: getNet(w,wh) }));
+      pending.length = 0;
+    }
+  });
+  paid.sort((a,b)=>a.h-b.h);
+  const perSkin = paid.length > 0 ? pot / paid.length : 0;
+  return { inIdx, pot, wins, paid, pushed, perSkin };
+}
+
+// ═══════════════════════════════════════════════════
+// UI HELPERS
+// ═══════════════════════════════════════════════════
+function showPage(id, btn){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('page-'+id).classList.add('active');
+  if(btn) btn.classList.add('active');
+  if(id==='score') renderScore();
+  if(id==='live')  renderLive();
+  if(id==='skins') renderSkins();
+  if(id==='setup') renderSetup();
+}
+
+function toast(msg){
+  const old = document.getElementById('_toast');
+  if(old) old.remove();
+  const el = document.createElement('div');
+  el.id = '_toast';
+  el.className = 'toast';
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(()=>el.remove(), 3200);
+}
+
+function toParStr(v){ return v===0?'E':v>0?`+${v}`:`${v}`; }
+function toParClr(v){ return v<0?'var(--won)':v>0?'var(--lost)':'var(--ink)'; }
+
+// ═══════════════════════════════════════════════════
+// SCORE ENTRY
+// ═══════════════════════════════════════════════════
+let currentHole = 0;
+
+function renderScore(){
+  const el = document.getElementById('scoreContent');
+  if(!S.teams){
+    el.innerHTML = `<div class="empty-state"><div style="font-size:40px;margin-bottom:10px">🎯</div><strong>Draw teams first</strong><br>Go to ⚙️ Setup and draw the teams before entering scores.</div>`;
+    return;
+  }
+  const h = currentHole;
+  const par = COURSE.pars[h];
+  const si = COURSE.si[h];
+  const [pairA, pairB] = S.teams;
+  const allPlayers = [...pairA, ...pairB];
+  const filled = allPlayers.filter(pi=>getGross(pi,h)!==null).length;
+  const progress = Math.round((filled/4)*100);
+  const holesWithAllScores = S.scores.filter(row=>row.every(v=>v!==null)).length;
+
+  // Match status bar for this hole
+  const match = computeMatch();
+  let matchBarHtml = '';
+  if(match && match.played > 0){
+    const clr = match.cls==='up'?'var(--won)':match.cls==='dn'?'var(--lost)':'var(--gold-lt)';
+    // Current hole net display
+    const curResA = pairA.map(pi=>{ const n=getNet(pi,h); return n!==null?{pi,n}:null; }).filter(Boolean);
+    const curResB = pairB.map(pi=>{ const n=getNet(pi,h); return n!==null?{pi,n}:null; }).filter(Boolean);
+    let holeNetHtml = '';
+    if(curResA.length || curResB.length){
+      const bestA = curResA.length ? curResA.reduce((m,x)=>x.n<m.n?x:m) : null;
+      const bestB = curResB.length ? curResB.reduce((m,x)=>x.n<m.n?x:m) : null;
+      holeNetHtml = `<div class="match-bar-hole">
+        <div class="match-bar-hole-side">Team A net this hole<br><strong>${bestA?bestA.n:'—'}</strong></div>
+        <div class="match-bar-hole-side">Team B net this hole<br><strong>${bestB?bestB.n:'—'}</strong></div>
+      </div>`;
+    }
+    matchBarHtml = `<div class="match-bar">
+      <div class="match-bar-teams">
+        <span class="chip chip-a">Team A</span>
+        <span style="opacity:.5;font-size:11px">vs</span>
+        <span class="chip chip-b">Team B</span>
+      </div>
+      <div class="match-bar-score" style="color:${clr}">${match.label}</div>
+      <div class="match-bar-sub">Through ${match.played} · ${match.rem} to play</div>
+      ${holeNetHtml}
+    </div>`;
+  }
+
+  // Player rows — sorted: pairA then divider then pairB
+  const rows = [];
+  [[pairA,'A'],[pairB,'B']].forEach(([pair, side], si2)=>{
+    if(si2===1) rows.push('<div class="divider"><span>VS</span></div>');
+    pair.forEach(pi=>{
+      const strokes = strokesOnHole(PHCPS[pi], si);
+      const gross = getGross(pi, h);
+      const netVal = gross ? gross - strokes : null;
+      const relCls = relClass(gross, par);
+      const relLbl = relLabel(gross, par);
+      const netRelCls = netVal !== null ? relClass(netVal, par) : '';
+      const netRelLbl = netVal !== null ? relLabel(netVal, par) : '';
+      const isMe = S.me === pi;
+      const dots = strokes===2
+        ? `<div class="stroke-dots"><div class="stroke-dot"></div><div class="stroke-dot"></div></div>`
+        : strokes===1 ? `<div class="stroke-dots"><div class="stroke-dot"></div></div>` : '';
+      const sideBadge = `<span class="chip chip-${side.toLowerCase()}" style="font-size:9px">Team ${side}</span>`;
+      rows.push(`<div class="pscore-card"><div class="pscore-row${isMe?' pscore-me':''}">
+        <div class="pscore-info">
+          <div class="pscore-name">${PLAYERS[pi].name}${isMe?` <span style="background:var(--gold);color:#fff;font-size:9px;font-weight:700;padding:1px 6px;border-radius:8px">YOU</span>`:''}</div>
+          <div class="pscore-meta">${sideBadge} ${sideBadge.length?'·':''} HCP&nbsp;${CHCPS[pi]} · Playing&nbsp;${PHCPS[pi]}${strokes>0?` · <strong>${strokes} stroke${strokes>1?'s':''} here</strong>`:''}</div>
+        </div>
+        <div class="stepper-wrap">
+          ${dots}
+          <div style="display:flex;align-items:stretch">
+            <button class="stepper-btn" onclick="adjScore(${pi},${h},-1)">−</button>
+            <div class="score-cell${gross?` ${relCls}`:''}">
+              <div class="score-gross" onclick="tapScore(${pi},${h})">${gross||par}</div>
+              <div class="score-net-line" onclick="tapScore(${pi},${h})">
+                <span class="score-net-lbl">net</span>
+                <span class="score-net-val">${netVal!==null?netVal:'—'}</span>
+                ${netVal!==null?`<span class="score-rel" style="color:${netRelCls==='sc-birdie'?'var(--won)':netRelCls==='sc-eagle'?'#1a6b8a':netRelCls==='sc-bogey'?'#b05a00':netRelCls==='sc-double'?'var(--lost)':'var(--ink-lt)'}">${netRelLbl}</span>`:''}
+              </div>
+              ${!gross?`<div class="score-tap">tap=par</div>`:''}
+            </div>
+            <button class="stepper-btn" onclick="adjScore(${pi},${h},1)">+</button>
+          </div>
+        </div>
+      </div></div>`);
+    });
+  });
+
+  // All-done banner
+  let doneBanner = '';
+  if(allPlayers.every(pi=>getGross(pi,h)!==null)){
+    const isLast = h === 17;
+    if(isLast && holesWithAllScores === 18){
+      doneBanner = `<div style="margin-top:14px;background:var(--won-bg);border:1.5px solid #86efac;border-radius:12px;padding:14px;text-align:center">
+        <div style="font-size:18px;margin-bottom:6px">🏁</div>
+        <div style="font-weight:700;color:var(--won);font-size:14px">All 18 holes complete!</div>
+        <div style="font-size:12px;color:var(--ink-lt);margin:6px 0 10px">Go to 📊 Live for full match result and 🏆 Skins for payouts.</div>
+        <div style="display:flex;gap:8px;justify-content:center">
+          <button class="btn btn-green btn-sm" onclick="showPage('live',document.getElementById('tab-live'))">📊 Live</button>
+          <button class="btn btn-gold btn-sm" onclick="showPage('skins',document.getElementById('tab-skins'))">🏆 Skins</button>
+        </div>
+      </div>`;
+    } else if(!isLast){
+      doneBanner = `<div style="margin-top:10px;text-align:center"><button class="btn btn-green btn-block" onclick="goToHole(${h+1})">Next: Hole ${h+2} →</button></div>`;
+    }
+  }
+
+  el.innerHTML = `
+    <div class="hole-nav">
+      <button class="hole-btn" onclick="goToHole(${h-1})" ${h===0?'disabled':''}>‹</button>
+      <div class="hole-nav-info">
+        <div class="hole-num">Hole ${h+1}</div>
+        <div class="hole-meta">Par ${par} · SI ${si} · ${filled}/4 scored</div>
+        <div class="hole-progress"><div class="hole-progress-fill" style="width:${Math.round((holesWithAllScores/18)*100)}%"></div></div>
+      </div>
+      <button class="hole-btn" onclick="goToHole(${h+1})" ${h===17?'disabled':''}>›</button>
+    </div>
+    ${matchBarHtml}
+    ${rows.join('')}
+    ${doneBanner}
+  `;
+}
+
+function goToHole(h){
+  if(h < 0 || h > 17) return;
+  currentHole = h;
+  renderScore();
+  // fire notable score toasts when leaving a completed hole
+  const [pairA, pairB] = S.teams || [[0,1],[2,3]];
+  [...pairA, ...pairB].forEach(pi=>{
+    const g = getGross(pi, currentHole === h ? h-1 : h);
+    if(g && S.scores[h][pi] !== null) maybeToast(pi, h);
+  });
+}
+
+function adjScore(pi, h, delta){
+  const cur = S.scores[h][pi];
+  const par = COURSE.pars[h];
+  const next = cur === null ? par + delta : cur + delta;
+  if(next < 1 || next > 15) return;
+  S.scores[h][pi] = next;
+  saveState();
+  renderScore();
+  if(document.getElementById('page-live').classList.contains('active')) renderLive();
+  if(document.getElementById('page-skins').classList.contains('active')) renderSkins();
+}
+
+function tapScore(pi, h){
+  const par = COURSE.pars[h];
+  S.scores[h][pi] = S.scores[h][pi] === null ? par : null;
+  saveState();
+  renderScore();
+}
+
+let _toastedHoles = new Set();
+function maybeToast(pi, h){
+  const key = `${pi}-${h}`;
+  if(_toastedHoles.has(key)) return;
+  const g = getGross(pi, h);
+  const par = COURSE.pars[h];
+  if(!g) return;
+  const strokes = strokesOnHole(PHCPS[pi], COURSE.si[h]);
+  const net = g - strokes;
+  const d = net - par;
+  if(d <= -2){
+    toast(`🦅 ${PLAYERS[pi].name} — Eagle on Hole ${h+1}!`);
+    _toastedHoles.add(key);
+  } else if(d === -1){
+    toast(`🐦 ${PLAYERS[pi].name} — Birdie on Hole ${h+1}`);
+    _toastedHoles.add(key);
+  }
+}
+
+// ═══════════════════════════════════════════════════
+// LIVE VIEW
+// ═══════════════════════════════════════════════════
+function renderLive(){
+  const el = document.getElementById('liveContent');
+  if(!S.teams){
+    el.innerHTML = `<div class="empty-state">No teams drawn yet. Go to ⚙️ Setup first.</div>`;
+    return;
+  }
+  const match = computeMatch();
+  const [pairA, pairB] = S.teams;
+  let html = '';
+
+  // ── Match card ──
+  const clr = match.cls==='up'?'var(--won)':match.cls==='dn'?'var(--lost)':'var(--gold-lt)';
+  const nameA = pairA.map(i=>PLAYERS[i].name).join(' & ');
+  const nameB = pairB.map(i=>PLAYERS[i].name).join(' & ');
+  html += `<div class="card">
+    <div class="card-head">
+      <span class="card-title">Four-Ball Match</span>
+      <span style="font-size:11px;color:var(--ink-lt)">${match.played} of 18 holes</span>
+    </div>
+    <div style="padding:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <div><span class="chip chip-a" style="margin-bottom:4px">Team A</span><div style="font-size:13px;font-weight:600;margin-top:3px">${nameA}</div></div>
+        <div style="text-align:center"><div style="font-family:'Playfair Display',serif;font-size:28px;font-weight:700;color:${clr}">${match.label}</div></div>
+        <div style="text-align:right"><span class="chip chip-b" style="margin-bottom:4px">Team B</span><div style="font-size:13px;font-weight:600;margin-top:3px;text-align:right">${nameB}</div></div>
+      </div>
+      ${match.log.length > 0 ? buildBBScorecard(match) : '<div class="empty-state" style="padding:12px">No holes scored yet.</div>'}
+    </div>
+  </div>`;
+
+  // ── Individual net totals ──
+  html += `<div class="card"><div class="card-head"><span class="card-title">Individual Scorecards</span></div>`;
+  [...pairA,...pairB].forEach(pi=>{
+    let gross=0, netTP=0, played=0;
+    COURSE.pars.forEach((par,h)=>{
+      const g = getGross(pi,h);
+      if(g){ gross+=g; netTP+=(g-strokesOnHole(PHCPS[pi],COURSE.si[h]))-par; played++; }
+    });
+    const netStr = played ? `${gross} (${toParStr(netTP)})` : '—';
+    const teamSide = pairA.includes(pi) ? 'A' : 'B';
+    const expandId = `sc-${pi}`;
+    html += `<div style="border-bottom:1px solid var(--cream-dk)">
+      <div onclick="toggleExpand('${expandId}')" style="display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer">
+        <span class="chip chip-${teamSide.toLowerCase()}" style="font-size:10px">Team ${teamSide}</span>
+        <strong style="flex:1">${PLAYERS[pi].name}</strong>
+        <span style="font-size:13px;font-weight:700;color:${toParClr(netTP)}">${netStr}</span>
+        <span style="font-size:11px;color:var(--ink-lt)">${played} holes</span>
+      </div>
+      <div id="${expandId}" style="display:none">${buildPlayerScorecard(pi)}</div>
+    </div>`;
+  });
+  html += '</div>';
+
+  el.innerHTML = html;
+}
+
+function buildBBScorecard(match){
+  const [pairA, pairB] = S.teams;
+  const relBg  = d => d===null?'#f0ede8':d<=-2?'#e8f7fb':d===-1?'#d1fae5':d===0?'#f8f6f2':d===1?'#fff8ee':'#fee2e2';
+  const relTxt = d => d===null?'#bbb':d<=-2?'#1a6b8a':d===-1?'var(--won)':d===0?'var(--ink)':d===1?'#b05a00':'var(--lost)';
+  const wonIcon = w => w==='A'?'▲':w==='B'?'▼':'·';
+  const wonClr  = w => w==='A'?'var(--won)':w==='B'?'var(--lost)':'var(--ink-lt)';
+
+  const cols = match.log.map(hl=>{
+    const dA = hl.bestA - hl.par, dB = hl.bestB - hl.par;
+    return `<td style="text-align:center;padding:0;min-width:24px">
+      <div style="font-size:9px;color:var(--ink-lt);padding:2px 0;border-bottom:1px solid #e8e4de">${hl.hole}</div>
+      <div style="padding:3px 1px;background:${relBg(dA)};color:${relTxt(dA)};font-weight:700;font-size:12px;border-bottom:1px dashed #e8e4de">${hl.bestA}</div>
+      <div style="padding:3px 1px;background:${relBg(dB)};color:${relTxt(dB)};font-weight:700;font-size:12px;border-bottom:1px solid #e8e4de">${hl.bestB}</div>
+      <div style="font-size:10px;padding:2px 0;color:${wonClr(hl.won)};font-weight:700">${wonIcon(hl.won)}</div>
+    </td>`;
+  }).join('');
+
+  const totA = match.log.reduce((s,hl)=>s+hl.bestA,0);
+  const totB = match.log.reduce((s,hl)=>s+hl.bestB,0);
+  const totPar = match.log.reduce((s,hl)=>s+hl.par,0);
+  const fmtTot = (v,p) => { const d=v-p; return `${v} (${toParStr(d)})`; };
+
+  return `<div style="overflow-x:auto"><table class="bb-table">
+    <tr>
+      <td style="padding-right:6px;white-space:nowrap;vertical-align:middle;font-size:10px;font-weight:700;color:var(--a)">
+        <div style="height:16px"></div>
+        <div style="padding:3px 0;border-bottom:1px dashed #e8e4de">Team A</div>
+        <div style="padding:3px 0;border-bottom:1px solid #e8e4de;color:var(--b)">Team B</div>
+        <div style="height:14px"></div>
+      </td>
+      ${cols}
+      <td style="padding-left:6px;text-align:right;white-space:nowrap;vertical-align:middle;font-size:11px">
+        <div style="font-size:9px;color:var(--ink-lt);padding:2px 0;border-bottom:1px solid #e8e4de">Total</div>
+        <div style="padding:3px 0;border-bottom:1px dashed #e8e4de;font-weight:700">${fmtTot(totA,totPar)}</div>
+        <div style="padding:3px 0;border-bottom:1px solid #e8e4de;font-weight:700">${fmtTot(totB,totPar)}</div>
+        <div style="height:14px"></div>
+      </td>
+    </tr>
+  </table>
+  <div style="font-size:10px;color:var(--ink-lt);margin-top:6px">Net scores · ▲/▼ = hole won · · = halved</div>
+  </div>`;
+}
+
+function buildPlayerScorecard(pi){
+  let grossCells='', netCells='', grossTotal=0, netTotal=0, netToPar=0;
+  COURSE.pars.forEach((par,h)=>{
+    const g = getGross(pi,h);
+    const st = strokesOnHole(PHCPS[pi],COURSE.si[h]);
+    const net = g ? g-st : null;
+    const gRel = g ? g-par : null;
+    const nRel = net!==null ? net-par : null;
+    const gBg  = gRel===null?'#f0ede8':gRel<=-2?'#e8f7fb':gRel===-1?'#d1fae5':gRel===0?'#f8f6f2':gRel===1?'#fff8ee':'#fee2e2';
+    const gTxt = gRel===null?'#bbb':gRel<=-2?'#1a6b8a':gRel===-1?'var(--won)':gRel===0?'var(--ink)':gRel===1?'#b05a00':'var(--lost)';
+    const nBg  = nRel===null?'#f0ede8':nRel<=-2?'#e8f7fb':nRel===-1?'#d1fae5':nRel===0?'#f8f6f2':nRel===1?'#fff8ee':'#fee2e2';
+    const nTxt = nRel===null?'#bbb':nRel<=-2?'#1a6b8a':nRel===-1?'var(--won)':nRel===0?'var(--ink)':nRel===1?'#b05a00':'var(--lost)';
+    if(g){ grossTotal+=g; netTotal+=(g-st); netToPar+=(g-st)-par; }
+    const dotsHtml = st===2
+      ? `<div style="display:flex;justify-content:center;gap:2px;margin-top:2px"><div style="width:4px;height:4px;border-radius:50%;background:var(--gold)"></div><div style="width:4px;height:4px;border-radius:50%;background:var(--gold)"></div></div>`
+      : st===1 ? `<div style="display:flex;justify-content:center;margin-top:2px"><div style="width:4px;height:4px;border-radius:50%;background:var(--gold)"></div></div>` : `<div style="height:6px"></div>`;
+    grossCells += `<td style="text-align:center;padding:4px 1px;background:${gBg};color:${gTxt};font-weight:${g?700:400};font-size:11px">${g||'—'}</td>`;
+    netCells   += `<td style="text-align:center;padding:4px 1px;background:${nBg};color:${nTxt};font-weight:${net!==null?700:400};font-size:11px;border-top:1px dashed #e5e0d8">${net!==null?net:'—'}</td>`;
+    // Inject dots into the header — handled separately via th content
+    // We track si for rendering dots in the hole header
+  });
+  const holeHdrs = COURSE.pars.map((par,h)=>{
+    const st = strokesOnHole(PHCPS[pi],COURSE.si[h]);
+    const dots = st===2
+      ? `<div style="display:flex;justify-content:center;gap:2px;margin-top:1px"><div style="width:4px;height:4px;border-radius:50%;background:var(--gold-lt)"></div><div style="width:4px;height:4px;border-radius:50%;background:var(--gold-lt)"></div></div>`
+      : st===1 ? `<div style="display:flex;justify-content:center;margin-top:1px"><div style="width:4px;height:4px;border-radius:50%;background:var(--gold-lt)"></div></div>` : `<div style="height:5px"></div>`;
+    return `<th style="padding:3px 1px;text-align:center;background:var(--green);color:var(--gold-lt);font-size:10px">${h+1}${dots}</th>`;
+  }).join('');
+  const netParStr = toParStr(netToPar);
+  return `<div style="overflow-x:auto;padding:2px 0 10px">
+    <table style="width:100%;border-collapse:collapse;font-size:11px">
+      <thead><tr>
+        <th style="padding:4px 8px;text-align:left;background:var(--green);color:var(--gold-lt);white-space:nowrap;font-size:10px">HCP ${CHCPS[pi]}<br>Playing ${PHCPS[pi]}</th>
+        ${holeHdrs}
+        <th style="padding:4px 6px;background:var(--green);color:var(--gold-lt);white-space:nowrap;font-size:10px">Total</th>
+      </tr></thead>
+      <tbody>
+        <tr><td style="padding:3px 8px;font-size:9px;color:var(--ink-lt)">Par</td>${COURSE.pars.map(p=>`<td style="text-align:center;padding:3px 1px;font-size:10px;color:var(--ink-lt)">${p}</td>`).join('')}<td style="padding:3px 6px;font-size:10px;color:var(--ink-lt)">72</td></tr>
+        <tr><td style="padding:4px 8px;font-weight:600;font-size:11px;white-space:nowrap">${PLAYERS[pi].name} <span style="font-size:9px;color:var(--ink-lt);font-weight:400">gross</span></td>${grossCells}<td style="padding:4px 6px;font-weight:700;white-space:nowrap">${grossTotal||'—'}</td></tr>
+        <tr style="background:rgba(0,0,0,.02)"><td style="padding:4px 8px;font-size:10px;color:var(--ink-lt);white-space:nowrap">${PLAYERS[pi].name} <span style="font-weight:400">net</span></td>${netCells}<td style="padding:4px 6px;font-weight:700;color:var(--green);white-space:nowrap">${grossTotal?`${netTotal} (${netParStr})`:'—'}</td></tr>
+      </tbody>
+    </table>
+  </div>`;
+}
+
+function toggleExpand(id){
+  const el = document.getElementById(id);
+  if(el) el.style.display = el.style.display==='none'?'block':'none';
+}
+
+// ═══════════════════════════════════════════════════
+// SKINS VIEW
+// ═══════════════════════════════════════════════════
+function renderSkins(){
+  const el = document.getElementById('skinsContent');
+  const sk = computeSkins();
+  const perSkin = sk.perSkin;
+
+  // Opt-in grid
+  const optGrid = PLAYERS.map((_,pi)=>`
+    <div class="skins-tog${S.skinsIn[pi]?' in':''}" onclick="toggleSkinIn(${pi})">
+      <div>${S.skinsIn[pi]?'✓':'—'}</div>
+      <div class="skins-tog-name">${PLAYERS[pi].name}</div>
+      <div class="skins-tog-status">${S.skinsIn[pi]?'In':'Out'}</div>
+    </div>`).join('');
+
+  // Pot summary
+  const potPills = sk.inIdx.map(pi=>{
+    const won = sk.wins[pi]||0;
+    const earn = perSkin>0 ? ` · CA$${(won*perSkin).toFixed(2)}` : '';
+    return `<span class="pot-pill"><strong>${PLAYERS[pi].name}</strong> ${won} skin${won!==1?'s':''}${earn}</span>`;
+  }).join('');
+
+  // Hole rows — paid only
+  const skinRows = sk.paid.length
+    ? `<div class="skin-row skin-row-head"><span class="skin-hole skin-hole-head">Hole</span><span>Winner</span><span>Net</span><span>Payout</span></div>`
+      + sk.paid.map(s=>`<div class="skin-row">
+           <span class="skin-hole">${s.h+1}</span>
+           <span style="font-weight:600">${PLAYERS[s.winner].name}</span>
+           <span style="font-size:12px;color:var(--ink-lt)">${s.net}</span>
+           <span>${perSkin>0?`CA$${perSkin.toFixed(2)}`:'—'}</span>
+         </div>`).join('')
+    : `<div style="padding:14px;font-size:12px;color:var(--ink-lt)">No skins paid yet — holes still being pushed or scores not entered.</div>`;
+
+  el.innerHTML = `<div class="card">
+    <div class="card-head">
+      <span class="card-title">🏆 Skins</span>
+      ${sk.pot>0?`<span style="font-size:12px;font-weight:600;color:var(--gold-dk)">Pot: CA$${sk.pot}</span>`:''}
+    </div>
+    <div class="skins-opt-grid">${optGrid}</div>
+    <div style="padding:10px 14px;border-bottom:1px solid var(--cream-dk);display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <span style="font-size:12px;font-weight:600">Buy-in per player:</span>
+      <span style="font-size:12px;color:var(--ink-lt)">CA$</span>
+      <input type="number" min="0" step="5" value="${S.skinsBuyin}" onchange="setBuyin(this.value)" style="width:64px;padding:5px 8px;border:1.5px solid var(--cream-dkr);border-radius:8px;font-size:13px"/>
+    </div>
+    ${sk.inIdx.length>0?`<div style="padding:10px 14px;border-bottom:1px solid var(--cream-dk);display:flex;flex-wrap:wrap">${potPills}</div>`:''}
+    <div>${skinRows}</div>
+  </div>`;
+}
+
+function toggleSkinIn(pi){
+  S.skinsIn[pi] = !S.skinsIn[pi];
+  saveState();
+  renderSkins();
+}
+
+function setBuyin(val){
+  S.skinsBuyin = parseFloat(val)||0;
+  saveState();
+  renderSkins();
+}
+
+// ═══════════════════════════════════════════════════
+// SETUP VIEW
+// ═══════════════════════════════════════════════════
+const TEAM_COMBOS = [
+  [[0,1],[2,3]], // Jim+Mike vs Greg+Cody
+  [[0,2],[1,3]], // Jim+Greg vs Mike+Cody
+  [[0,3],[1,2]], // Jim+Cody vs Mike+Greg
+];
+let pendingTeams = null;
+
+function renderSetup(){
+  const el = document.getElementById('setupContent');
+  const chcps = CHCPS;
+  const phcps = PHCPS;
+
+  // Handicap table
+  const hcpRows = PLAYERS.map((p,i)=>`
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--cream-dk)">
+      <div><strong>${p.name}</strong><span style="font-size:11px;color:var(--ink-lt);margin-left:8px">HI ${p.hi}</span></div>
+      <div style="text-align:right">
+        <div style="font-size:13px;font-weight:600">Course HCP: <strong>${chcps[i]}</strong></div>
+        <div style="font-size:11px;color:var(--ink-lt)">Playing (off Jim): <strong>${phcps[i]}</strong></div>
+      </div>
+    </div>`).join('');
+
+  // Team selection
+  const teamOpts = TEAM_COMBOS.map((combo,idx)=>{
+    const [a,b] = combo;
+    const isSelected = pendingTeams && JSON.stringify(pendingTeams)===JSON.stringify(combo);
+    const isCurrent = S.teams && JSON.stringify(S.teams)===JSON.stringify(combo);
+    return `<div class="team-opt${isSelected?' selected':''}" onclick="selectTeams(${idx})">
+      <div class="team-opt-header"><span class="chip chip-a" style="font-size:10px">Team A</span> vs <span class="chip chip-b" style="font-size:10px">Team B</span>${isCurrent?' <span style="font-size:10px;color:var(--won)">✓ current</span>':''}</div>
+      <div class="team-opt-players">
+        ${a.map(i=>`<span style="font-size:13px;font-weight:600;color:var(--a)">${PLAYERS[i].name}</span>`).join(' + ')}
+        <span style="color:var(--ink-lt);font-size:12px">vs</span>
+        ${b.map(i=>`<span style="font-size:13px;font-weight:600;color:var(--b)">${PLAYERS[i].name}</span>`).join(' + ')}
+      </div>
+    </div>`;
+  }).join('');
+
+  const randomOpt = `<div class="team-opt" onclick="randomTeams()">
+    <div class="team-opt-header">🎲 Random draw</div>
+    <div style="font-size:12px;color:var(--ink-lt)">Randomize — tries to avoid same-team roommates if possible</div>
+  </div>`;
+
+  const confirmBtn = pendingTeams
+    ? `<button class="btn btn-gold btn-block" onclick="confirmTeams()" style="margin-top:10px">✅ Set Teams</button>`
+    : '';
+
+  el.innerHTML = `
+    <div class="card">
+      <div class="card-head"><span class="card-title">Handicaps (Blue Tees)</span></div>
+      <div style="padding:0 16px 4px">${hcpRows}</div>
+      <div style="padding:10px 16px;font-size:11px;color:var(--ink-lt)">
+        Playing off the low handicapper (Jim, CHC ${chcps[0]}) — everyone receives the difference.<br>
+        CHC formula: HI × (Slope÷113) + (Rating−Par)
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><span class="card-title">Draw Teams</span></div>
+      <div style="padding:12px 14px">
+        ${teamOpts}
+        ${randomOpt}
+        ${confirmBtn}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><span class="card-title">My Identity</span></div>
+      <div style="padding:12px 14px">
+        <div style="margin-bottom:10px;font-size:13px;color:var(--ink-lt)">Current: <strong>${S.me!==null?PLAYERS[S.me].name:'Not set'}</strong></div>
+        ${PLAYERS.map((_,i)=>`<button class="btn btn-outline btn-sm" style="margin:3px" onclick="setMe(${i})">${PLAYERS[i].name}</button>`).join('')}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><span class="card-title">⚠️ Reset</span></div>
+      <div style="padding:14px">
+        <p style="font-size:13px;color:var(--ink-lt);margin-bottom:12px">Clear all scores, teams, and skins data. Good for a fresh test run.</p>
+        <button class="btn btn-danger btn-sm" onclick="openReset()">🗑️ Reset Everything</button>
+      </div>
+    </div>
+  `;
+}
+
+function selectTeams(idx){
+  pendingTeams = TEAM_COMBOS[idx];
+  renderSetup();
+}
+
+function randomTeams(){
+  const shuffled = [...[0,1,2,3]].sort(()=>Math.random()-.5);
+  pendingTeams = [[shuffled[0],shuffled[1]],[shuffled[2],shuffled[3]]];
+  renderSetup();
+  toast('🎲 Teams randomized — tap Set Teams to confirm');
+}
+
+function confirmTeams(){
+  if(!pendingTeams) return;
+  S.teams = pendingTeams;
+  pendingTeams = null;
+  saveState();
+  updateHeroPill();
+  renderSetup();
+  toast('✅ Teams set!');
+}
+
+function setMe(i){
+  S.me = i;
+  saveState();
+  document.getElementById('meDisplay').textContent = PLAYERS[i].name + ' ✏️';
+  renderSetup();
+  toast(`👋 Playing as ${PLAYERS[i].name}`);
+}
+
+function updateHeroPill(){
+  const el = document.getElementById('heroPill');
+  if(!S.teams){ el.textContent='No teams drawn yet'; return; }
+  const [a,b] = S.teams;
+  el.innerHTML = `A: <strong>${a.map(i=>PLAYERS[i].name).join('+')} </strong> vs B: <strong>${b.map(i=>PLAYERS[i].name).join('+')}</strong>`;
+}
+
+// ═══════════════════════════════════════════════════
+// IDENTITY PICKER
+// ═══════════════════════════════════════════════════
+function showIdPicker(){
+  document.getElementById('idOverlay').style.display = 'flex';
+}
+
+function pickMe(i){
+  S.me = i;
+  saveState();
+  document.getElementById('idOverlay').style.display = 'none';
+  document.getElementById('meDisplay').textContent = PLAYERS[i].name + ' ✏️';
+  toast(`👋 Welcome, ${PLAYERS[i].name}!`);
+  renderScore();
+}
+
+// ═══════════════════════════════════════════════════
+// RESET
+// ═══════════════════════════════════════════════════
+function openReset(){ document.getElementById('resetOverlay').style.display='flex'; }
+function closeReset(){ document.getElementById('resetOverlay').style.display='none'; }
+function doReset(){
+  _toastedHoles = new Set();
+  pendingTeams = null;
+  S = defaultState();
+  saveState();
+  closeReset();
+  updateHeroPill();
+  renderScore();
+  renderLive();
+  renderSkins();
+  renderSetup();
+  toast('♻️ Reset complete');
+}
+
+// ═══════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════
+loadState();
+updateHeroPill();
+if(S.me !== null){
+  document.getElementById('meDisplay').textContent = PLAYERS[S.me].name + ' ✏️';
+}
+renderScore();
+
+if(S.me === null) showIdPicker();
+</script>
+</body>
+</html>
