@@ -505,7 +505,7 @@ if('serviceWorker' in navigator){
   </div>
   <div id="adminSectionSchedule" style="display:none">
     <div class="info-box" style="margin-bottom:16px">
-      <strong>How draws work:</strong> Each round randomly assigns playing partners. Points won always credit your <strong>home roommate team</strong>. Randomize as many times as you like before locking.
+      <strong>How draws work:</strong> Each round randomly assigns playing partners. Points won always credit your <strong>home roommate team</strong>. For Net Stroke rounds the draw sets the two <strong>scoring groups of 4</strong> (everyone still competes in one tournament). Randomize as many times as you like before locking.
     </div>
     <div id="scheduleCards"></div>
   </div>
@@ -584,6 +584,42 @@ async function sb(path, opts={}){
 }
 
 // ═══════════════════════════════════════════════════════════
+// TRIP META SYNC — skins opt-ins, round locks, tee selections
+// Synced through the trip_meta table (key text PK, data jsonb).
+// Gracefully degrades to device-local storage if the table
+// hasn't been created yet (see setup SQL in project docs).
+// ═══════════════════════════════════════════════════════════
+const META_KEYS = ['skinsOptIn','roundLocks','drawLocks','tees'];
+let metaSyncAvailable = true;
+
+async function pushMeta(...keys){
+  if(!metaSyncAvailable) return;
+  for(const key of keys){
+    const data = STATE[key];
+    try{
+      const res = await sb(`trip_meta?key=eq.${key}`,{method:'PATCH',body:{data},prefer:'return=representation'});
+      if(!res || (Array.isArray(res) && res.length===0)){
+        await sb('trip_meta',{method:'POST',body:{key,data},prefer:'return=minimal'});
+      }
+      setSyncDot('live');
+    }catch(e){
+      const msg = String(e.message||'');
+      if(msg.includes('42P01') || msg.startsWith('404')){
+        metaSyncAvailable = false;
+        console.warn('trip_meta table not found — skins opt-ins, locks & tees stay device-local until it is created.');
+        return;
+      }
+      setSyncDot('err'); // saved locally; will show on this device
+    }
+  }
+}
+
+function applyMeta(key, data){
+  if(!META_KEYS.includes(key) || data == null) return;
+  STATE[key] = data;
+}
+
+// ═══════════════════════════════════════════════════════════
 // REALTIME (Supabase Realtime via WebSocket)
 // ═══════════════════════════════════════════════════════════
 let realtimeWs = null;
@@ -597,7 +633,7 @@ function connectRealtime(){
   realtimeWs.onopen = () => {
     setSyncDot('live');
     // Join channel for each table
-    ['players','draws','scores','results','chat','notifications'].forEach(table => {
+    ['players','draws','scores','results','chat','notifications','trip_meta'].forEach(table => {
       realtimeWs.send(JSON.stringify({
         topic: `realtime:public:${table}`,
         event: 'phx_join',
@@ -657,6 +693,11 @@ function handleRealtimeEvent(table, event, record, oldRecord){
     showNotifToast(record);
     appendNotifFeed(record);
   }
+  if(table === 'trip_meta' && record){
+    applyMeta(record.key, record.data);
+    saveLocal();
+    renderSchedule(); renderScores(); renderSkins(); renderSettlement(); renderScoreboard(); updateHero();
+  }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -671,7 +712,7 @@ const TEAMS = [
 
 const ROUNDS = [
   {id:0,num:1,date:'Jul 13',course:'The Island',      par:72,rating:75.1,slope:132,format:'BB', pts:2,label:'Best Ball'},
-  {id:1,num:2,date:'Jul 14',course:'Lahinch Old',     par:72,rating:76.6,slope:132,format:'NS', pts:4,label:'Net Stroke Tourney'},
+  {id:1,num:2,date:'Jul 14',course:'Lahinch Old',     par:72,rating:74.7,slope:138,format:'NS', pts:4,label:'Net Stroke Tourney'},
   {id:2,num:3,date:'Jul 15',course:'Ballybunion Old', par:71,rating:72.5,slope:131,format:'MP', pts:2,label:'Match Play'},
   {id:3,num:4,date:'Jul 16',course:'Dooks',           par:71,rating:72.4,slope:133,format:'BB', pts:2,label:'Best Ball'},
   {id:4,num:5,date:'Jul 17',course:'Tralee',          par:72,rating:72.3,slope:128,format:'NS', pts:4,label:'Net Stroke Tourney'},
@@ -684,7 +725,8 @@ const ROUNDS = [
 // Tee colours verified from official scorecards / 18Birdies / course websites.
 const COURSES = {
   'The Island':      {
-    pars:[4,4,3,4,5,4,4,3,4,4,4,5,3,4,4,3,4,4],si:[11,7,15,3,13,5,9,17,1,12,8,16,4,14,6,18,2,10],
+    pars:[4,4,5,3,4,4,4,4,4,5,4,4,3,4,5,3,4,4],si:[4,6,16,14,2,18,12,8,10,9,11,3,7,15,17,13,5,1],
+    names:['Partridge Hollow','Caul’s View','Lambay','Portrane','Skylark’s Nest','Desert','Ridge','Tower','Sand Martin','Quarry','Cricket Field','Valhalla','Broadmeadow','Old Clubhouse','Prairie','Andes','Ireland’s Eye','Boulia Field'],
     tees:[
       {name:'Blue',  color:'#1a4fc4',rating:74.7,slope:132,par:72},
       {name:'White', color:'#e8e8e8',rating:74.0,slope:129,par:72},
@@ -693,16 +735,17 @@ const COURSES = {
     ]
   },
   'Lahinch Old':     {
-    pars:[4,5,3,4,5,3,4,4,4,4,4,4,4,4,3,4,3,5],si:[5,11,17,3,15,13,1,7,9,8,4,18,12,2,16,6,14,10],
+    pars:[4,5,4,5,3,4,4,3,4,4,3,5,4,4,4,3,4,5],si:[8,14,4,18,16,2,6,12,10,3,13,9,17,5,1,11,7,15],
+    names:['MacKenzie','Village','Cillstifiann','Klondyke','Dell','Paradise','Blind Hookey','Crater','Burke’s Corner','Goats','Liscannor','Castle','Mine','Twins','Brud’s Vision','Old Tom','Pons Asinorum','Shaw'],
     tees:[
-      {name:'Blue',  color:'#1a4fc4',rating:76.6,slope:132,par:72},
-      {name:'White', color:'#e8e8e8',rating:74.0,slope:128,par:72},
-      {name:'Green', color:'#2d7a2d',rating:71.5,slope:124,par:72},
-      {name:'Red',   color:'#cc2200',rating:70.0,slope:120,par:72},
+      {name:'Blue',  color:'#1a4fc4',rating:74.7,slope:138,par:72},
+      {name:'White', color:'#e8e8e8',rating:73.2,slope:132,par:72},
+      {name:'Green', color:'#2d7a2d',rating:71.8,slope:130,par:72},
+      {name:'Red',   color:'#cc2200',rating:73.9,slope:131,par:74},
     ]
   },
   'Ballybunion Old': {
-    pars:[4,4,3,4,5,5,4,4,3,4,4,3,4,5,4,3,4,4],si:[9,5,17,1,13,11,3,15,7,10,2,18,6,14,4,16,8,12],
+    pars:[4,4,3,5,5,4,4,3,4,4,4,3,5,3,3,5,4,4],si:[11,1,9,17,13,7,5,15,3,12,2,8,18,14,4,16,6,10],
     tees:[
       {name:'Blue',  color:'#1a4fc4',rating:74.5,slope:131,par:71},
       {name:'White', color:'#e8e8e8',rating:72.5,slope:131,par:71},
@@ -711,7 +754,7 @@ const COURSES = {
     ]
   },
   'Dooks':           {
-    pars:[4,4,3,4,5,4,4,3,4,5,4,3,4,4,3,4,5,4],si:[7,3,17,9,13,1,11,15,5,12,6,18,8,4,16,2,14,10],
+    pars:[4,4,4,3,4,5,4,3,5,5,3,4,3,4,4,4,4,4],si:[6,12,10,14,4,18,2,16,8,9,15,7,17,3,13,11,1,5],
     tees:[
       {name:'Blue',  color:'#1a4fc4',rating:72.4,slope:133,par:71},
       {name:'White', color:'#e8e8e8',rating:70.6,slope:129,par:71},
@@ -720,7 +763,8 @@ const COURSES = {
     ]
   },
   'Tralee':          {
-    pars:[4,4,3,4,4,5,3,4,4,4,4,3,5,4,3,4,5,4],si:[5,9,15,1,11,13,17,3,7,6,10,18,12,2,16,4,14,8],
+    pars:[4,5,3,4,4,4,3,4,5,4,5,4,3,4,4,3,4,5],si:[12,4,16,8,6,10,18,2,14,3,7,1,15,11,13,9,5,17],
+    names:['','','Castle','','','','','','','','','','','','','Shipwreck','Ryan’s Daughter',''],
     tees:[
       {name:'Blue',  color:'#1a4fc4',rating:73.6,slope:135,par:72},
       {name:'White', color:'#e8e8e8',rating:72.3,slope:128,par:72},
@@ -729,7 +773,8 @@ const COURSES = {
     ]
   },
   'Waterville':      {
-    pars:[4,4,3,4,5,3,4,4,5,4,5,3,4,4,3,4,4,4],si:[11,5,17,7,13,15,3,9,1,10,4,18,8,14,16,2,6,12],
+    pars:[4,4,4,3,5,3,4,4,4,4,5,3,5,4,4,4,3,5],si:[11,1,3,17,13,15,7,9,5,2,12,14,18,4,6,10,16,8],
+    names:['Last Easy','Christy’s Choice','Sanctuary','Dunes','Tipperary','Inny Valley','Teacher','Hare','Prodigal','Red Breast','Tranquility','Mass Hole','Meadow Lark','Judge','Vale','Liam’s Ace','Mulcahy’s Peak','O’Grady’s Beach'],
     tees:[
       {name:'Black', color:'#1a1a1a',rating:76.1,slope:131,par:72},
       {name:'Blue',  color:'#1a4fc4',rating:73.6,slope:127,par:72},
@@ -738,7 +783,7 @@ const COURSES = {
     ]
   },
   'Portmarnock':     {
-    pars:[4,4,4,4,4,5,3,4,4,4,4,3,4,4,3,4,3,4],si:[11,15,13,1,5,9,17,3,7,10,8,14,16,2,18,4,12,6],
+    pars:[4,4,4,4,4,5,3,4,4,4,4,3,5,4,3,5,4,4],si:[11,15,13,1,5,9,17,7,3,8,6,16,14,2,12,18,4,10],
     tees:[
       {name:'Blue',  color:'#1a4fc4',rating:79.0,slope:136,par:72},
       {name:'White', color:'#e8e8e8',rating:76.5,slope:132,par:72},
@@ -762,6 +807,7 @@ function setRoundTee(rndId, teeIdx){
   renderSchedule();
   renderScores();
   renderSkins();
+  pushMeta('tees');
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -900,6 +946,16 @@ async function loadAll(){
     scores.forEach(s=>{ STATE.scores[s.round_id] = s.data; });
     results.forEach(r=>{ STATE.results[r.round_id] = r.data; });
 
+    // Shared settings: skins opt-ins, round locks, tee selections.
+    // Separate guarded fetch so a missing trip_meta table never breaks the app.
+    try{
+      const meta = await sb('trip_meta?select=key,data');
+      (meta||[]).forEach(m => applyMeta(m.key, m.data));
+    }catch(e){
+      metaSyncAvailable = false;
+      console.warn('trip_meta table not found — skins opt-ins, locks & tees stay device-local until it is created.');
+    }
+
     saveLocal(); // cache fresh server data
     renderAll();
     setSyncDot('live');
@@ -938,6 +994,8 @@ function renderAll(){
 // HANDICAP UTILS
 // ═══════════════════════════════════════════════════════════
 function courseHcp(hi,slope,rating,par){ return Math.round(hi*(slope/113)+(rating-par)); }
+// Official hole name for a round's course (empty string when the course doesn't name the hole)
+function holeName(rndId, h){ const c = COURSES[ROUNDS[rndId]?.course]; return (c && c.names && c.names[h]) || ''; }
 function strokesOnHole(chcp,si){
   if(chcp<=0) return 0;
   if(chcp<=18) return si<=chcp?1:0;
@@ -1074,7 +1132,7 @@ function renderSchedule(){
     const draw=STATE.draws[r.id];
     const roundLocked=STATE.roundLocks[r.id];
     const isNS = r.format === 'NS';
-    const drawControls = isNS ? '' : (draw
+    const drawControls = (draw
       ? (roundLocked
           ? '' // no re-randomize when round is locked
           : `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px">
@@ -1086,17 +1144,19 @@ function renderSchedule(){
                <button class="btn btn-outline btn-sm" onclick="randomizeDraw(${r.id})">🎲 Randomize Draw</button>
              </div>`));
     const lockBtn = roundLocked
-      ? `<div class="round-locked-banner">🔒 Round locked &nbsp;·&nbsp; Draw &amp; skins participants are set
+      ? `<div class="round-locked-banner">🔒 Round locked &nbsp;·&nbsp; Draw is set · skins still editable in Admin → 🎰 Skins
            <button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="openUnlockRoundModal(${r.id})">🔓 Admin Unlock</button>
          </div>`
-      : ((!isNS && draw)
+      : (draw
           ? `<div style="margin-top:10px">
                <button class="btn-lock-round" onclick="lockRound(${r.id})">🔒 Lock Round</button>
              </div>`
           : '');
-    const drawDisplay = isNS
-      ? `<div style="font-size:12px;color:#555">All 8 players compete in a single stroke play tournament — no draw required.</div>`
-      : (draw ? renderDrawPairs(r,draw) : '<div style="font-size:12px;color:#888;margin-bottom:8px">No draw yet</div>');
+    const drawDisplay = draw
+      ? renderDrawPairs(r,draw)
+      : (isNS
+          ? `<div style="font-size:12px;color:#888;margin-bottom:8px">No draw yet — all 8 compete in one net stroke tourney. Randomize to set the two scoring groups of 4 (defaults to Group 1: ${[0,1,2,3].map(playerName).join(', ')} · Group 2: ${[4,5,6,7].map(playerName).join(', ')}).</div>`
+          : '<div style="font-size:12px;color:#888;margin-bottom:8px">No draw yet</div>');
     return `
     <div class="rnd-card ${fmtClass}">
       <div class="rnd-head">
@@ -1146,11 +1206,13 @@ function renderSchedule(){
 function renderDrawPairs(r,draw){
   const fmt=r.format;
   if(fmt==='NS'){
-    return `<div style="font-size:12px;color:#555;margin-bottom:8px">Playing Groups:</div>`+
-      draw.map((pair,i)=>`
+    // Scoring tab reads NS draws as: pairs 0+1 → Group 1, pairs 2+3 → Group 2
+    const groups=[[...(draw[0]||[]),...(draw[1]||[])],[...(draw[2]||[]),...(draw[3]||[])]];
+    return `<div style="font-size:12px;color:#555;margin-bottom:8px">Scoring Groups <span style="font-size:10px;color:#888">(all 8 compete in one net stroke tourney — groups are for scorekeeping)</span>:</div>`+
+      groups.map((g,i)=>`
         <div class="draw-pair">
-          <span style="font-size:10px;color:#888;min-width:16px">${i+1}.</span>
-          ${pair.map(pi=>`<span class="chip chip-${playerTeam(pi).color}">${playerName(pi)}</span>`).join('<span class="draw-vs">+</span>')}
+          <span style="font-size:10px;color:#888;min-width:16px">G${i+1}</span>
+          ${g.map(pi=>`<span class="chip chip-${playerTeam(pi).color}">${playerName(pi)}</span>`).join('<span class="draw-vs">+</span>')}
         </div>`).join('');
   }
   if(fmt==='SMP'){
@@ -1185,10 +1247,11 @@ function lockRound(roundIdx){
   STATE.roundLocks[roundIdx] = true;
   STATE.drawLocks[roundIdx]  = true; // keep drawLocks in sync for safety
   saveLocal();
+  pushMeta('roundLocks','drawLocks');
   renderSchedule();
   renderScores();
   renderSkins();
-  showAlert(`🔒 Round ${roundIdx+1} locked — draw & skins participants are set.`, 'green');
+  showAlert(`🔒 Round ${roundIdx+1} locked — draw is set. Skins opt-ins remain editable in Admin → 🎰 Skins.`, 'green');
 }
 
 function openUnlockRoundModal(roundIdx){
@@ -1196,7 +1259,7 @@ function openUnlockRoundModal(roundIdx){
   document.getElementById('unlockRoundPwInput').value = '';
   document.getElementById('unlockRoundError').style.display = 'none';
   document.getElementById('unlockRoundDesc').textContent =
-    `Enter the admin password to unlock Round ${roundIdx+1} and allow draw & skins changes.`;
+    `Enter the admin password to unlock Round ${roundIdx+1} and allow draw changes.`;
   document.getElementById('unlockRoundOverlay').style.display = 'flex';
   setTimeout(()=>document.getElementById('unlockRoundPwInput').focus(), 100);
 }
@@ -1219,6 +1282,7 @@ function confirmUnlockRound(){
   STATE.roundLocks[idx] = false;
   STATE.drawLocks[idx]  = false;
   saveLocal();
+  pushMeta('roundLocks','drawLocks');
   renderSchedule();
   renderScores();
   renderSkins();
@@ -1279,9 +1343,9 @@ function selectScoreRound(idx){ sv2SelectRound(idx); }
 // Determine which group the logged-in player belongs to for this round
 function sv2GetMyGroup(rndId){
   if(!ME) return null;
-  const draw = STATE.draws[rndId];
-  if(!draw) return null;
   const r = ROUNDS[rndId];
+  const draw = STATE.draws[rndId];
+  if(!draw) return r.format === 'NS' ? Math.floor(ME.slot / 4) : null;
   if(r.format === 'NS'){
     // NS: draw is playing groups of 2; find which pair ME is in → group 0 or 1 (groups of 4: pairs 0+1 = group0, pairs 2+3 = group1)
     // Actually NS draw is 4 pairs: find which pair index has ME, then group = Math.floor(pairIdx / 2)
@@ -1460,12 +1524,45 @@ function sv2RelLabel(gross, par){
   return '+' + rel;
 }
 
-function sv2MatchStatusHtml(rndId, groupIdx){
+function sv2MatchStatusHtml(rndId, groupIdx, groupPlayers){
   const r = ROUNDS[rndId];
-  if(r.format === 'NS') return '';
+  const c = COURSES[r.course];
+  if(r.format === 'NS'){
+    // NS: live group standings — gross & net, total and to-par
+    const tee = getRoundTee(rndId);
+    const fmtTP = v => v===0?'E':v>0?'+'+v:''+v;
+    const rows = (groupPlayers||[]).map(pi => {
+      const chcp = courseHcp(STATE.players[pi].hi, tee.slope, tee.rating, tee.par);
+      const gr = STATE.scores[rndId]?.gross?.[pi] || [];
+      let gross=0, net=0, holes=0, parPlayed=0;
+      c.pars.forEach((par,h)=>{ const g=parseInt(gr[h])||0; if(g){ gross+=g; net+=g-strokesOnHole(chcp,c.si[h]); holes++; parPlayed+=par; } });
+      return { pi, gross, net, holes, grossToPar: gross-parPlayed, netToPar: net-parPlayed };
+    }).filter(x => x.holes > 0).sort((a,b) => a.netToPar - b.netToPar || b.holes - a.holes);
+    if(!rows.length) return '';
+    const tpClr = v => v<0?'#7ee2a8':v>0?'#f2a0a0':'var(--gold-lt)';
+    const rowHtml = rows.map((x,i) => `
+      <tr>
+        <td style="padding:4px 6px;opacity:.6">${i+1}</td>
+        <td style="padding:4px 6px;text-align:left;font-weight:600">${playerName(x.pi).split(' ')[0]}${ME&&ME.slot===x.pi?' ★':''}</td>
+        <td style="padding:4px 6px;text-align:center">${x.gross} <span style="color:${tpClr(x.grossToPar)}">(${fmtTP(x.grossToPar)})</span></td>
+        <td style="padding:4px 6px;text-align:center;font-weight:700">${x.net} <span style="color:${tpClr(x.netToPar)}">(${fmtTP(x.netToPar)})</span></td>
+        <td style="padding:4px 6px;text-align:right;opacity:.6">${x.holes}</td>
+      </tr>`).join('');
+    return `<div class="sv2-match-status" style="text-align:left;padding:10px 14px">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;opacity:.7;margin-bottom:6px">Group ${groupIdx+1} Standings · Net Stroke</div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead><tr style="font-size:9px;text-transform:uppercase;letter-spacing:.06em;opacity:.55">
+          <th style="padding:2px 6px;text-align:left">#</th><th style="padding:2px 6px;text-align:left">Player</th>
+          <th style="padding:2px 6px;text-align:center">Gross (±)</th><th style="padding:2px 6px;text-align:center">Net (±)</th>
+          <th style="padding:2px 6px;text-align:right">Thru</th>
+        </tr></thead>
+        <tbody>${rowHtml}</tbody>
+      </table>
+      <div class="sv2-ms-sub" style="margin-top:6px">Net = gross − handicap strokes · (±) is vs par for holes played</div>
+    </div>`;
+  }
   const draw = STATE.draws[rndId];
   if(!draw) return '';
-  const c = COURSES[r.course];
   const mkey = sv2GetMkey(groupIdx);
   if(!STATE.scores[rndId]?.matches?.[mkey]) return '';
   const mdata = STATE.scores[rndId].matches[mkey];
@@ -1656,13 +1753,14 @@ function renderScoresV2(){
       <button class="sv2-hole-prev" onclick="sv2GoToHole(${hole-1})" ${hole===0?'disabled':''}>‹</button>
       <div class="sv2-hole-info">
         <div class="sv2-hole-num">Hole ${hole+1}</div>
+        ${holeName(rndId,hole)?`<div style="font-family:'Playfair Display',serif;font-style:italic;font-size:13px;color:var(--gold);margin-top:1px">${holeName(rndId,hole)}</div>`:''}
         <div class="sv2-hole-meta">Par ${par}</div>
         <div class="sv2-hole-si">SI ${si}</div>
       </div>
       <button class="sv2-hole-next" onclick="sv2GoToHole(${hole+1})" ${hole===17?'disabled':''}>›</button>
     </div>
 
-    ${sv2MatchStatusHtml(rndId, groupIdx)}
+    ${sv2MatchStatusHtml(rndId, groupIdx, players)}
 
     <div class="sv2-players">${playerRows}</div>
 
@@ -1762,17 +1860,20 @@ function calculateLiveStatus(rndId){
     const standings = players.map(pi => {
       const chcp = courseHcp(STATE.players[pi].hi, getRoundTee(rndId).slope, getRoundTee(rndId).rating, getRoundTee(rndId).par);
       const gross = STATE.scores[rndId]?.gross?.[pi] || [];
-      let netTotal=0, grossTotal=0, holesPlayed=0;
-      c.pars.forEach((_,h) => {
+      let netTotal=0, grossTotal=0, holesPlayed=0, parPlayed=0;
+      c.pars.forEach((par,h) => {
         const g = parseInt(gross[h])||0;
-        if(g){ netTotal += g - strokesOnHole(chcp, c.si[h]); grossTotal += g; holesPlayed++; }
+        if(g){ netTotal += g - strokesOnHole(chcp, c.si[h]); grossTotal += g; holesPlayed++; parPlayed += par; }
       });
-      return { pi, chcp, netTotal, grossTotal, holesPlayed };
+      return { pi, chcp, netTotal, grossTotal, holesPlayed, parPlayed,
+               grossToPar: grossTotal - parPlayed, netToPar: netTotal - parPlayed };
     }).sort((a,b) => {
       if(!a.holesPlayed && !b.holesPlayed) return 0;
       if(!a.holesPlayed) return 1;
       if(!b.holesPlayed) return -1;
-      return a.netTotal - b.netTotal;
+      // Rank by net-to-par so players mid-round on different holes compare fairly
+      if(a.netToPar !== b.netToPar) return a.netToPar - b.netToPar;
+      return b.holesPlayed - a.holesPlayed;
     });
     return { format:'NS', standings };
   }
@@ -2075,14 +2176,17 @@ function renderStandings(){
 // SKINS (reads raw scores; labeled projected until finalized)
 // ═══════════════════════════════════════════════════════════
 function toggleSkinOptIn(rndId, pi){
-  if(STATE.roundLocks[rndId]) return;
+  // Admin panel: opt-ins can be corrected even after the round is locked or finalized.
+  // Skins (and Settlement) are always recomputed live from raw scores + opt-ins, so a
+  // late opt-in immediately recalculates all skins and payouts for the round.
   STATE.skinsOptIn[rndId].players[pi] = !STATE.skinsOptIn[rndId].players[pi];
-  saveLocal(); renderSkins();
+  saveLocal(); renderSkins(); renderSettlement(); renderScoreboard();
+  pushMeta('skinsOptIn');
 }
 function setSkinStake(rndId, val){
-  if(STATE.roundLocks[rndId]) return;
   STATE.skinsOptIn[rndId].stake = parseFloat(val)||0;
-  saveLocal(); renderSkins();
+  saveLocal(); renderSkins(); renderSettlement(); renderScoreboard();
+  pushMeta('skinsOptIn');
 }
 
 function computeSkinsForRound(rndId){
@@ -2126,13 +2230,12 @@ function renderSkins(){
   let html = '';
   ROUNDS.forEach(r => {
     const opt = STATE.skinsOptIn[r.id];
-    const { inPlayers, stake, pot, skinWins, roundSkins } = computeSkinsForRound(r.id);
+    const { inPlayers, stake, pot, skinWins, roundSkins, pushedHoles } = computeSkinsForRound(r.id);
     const roundLocked = STATE.roundLocks[r.id];
     const isFinalized = !!STATE.results[r.id];
     const optGrid = Array(8).fill(0).map((_,pi) => {
       const t = playerTeam(pi); const isIn = opt.players[pi];
-      const lockedCls = roundLocked ? ' style="cursor:not-allowed;opacity:.75"' : '';
-      return `<div class="skins-player-toggle ${isIn?'in':''}" onclick="${roundLocked?'':` toggleSkinOptIn(${r.id},${pi})`}"${lockedCls}><span class="chip chip-${t.color}" style="font-size:9px">${t.name}</span><span class="tog-name">${playerName(pi).split(' ')[0]}</span><span class="tog-status">${isIn?'✓ In':'—'}</span></div>`;
+      return `<div class="skins-player-toggle ${isIn?'in':''}" onclick=" toggleSkinOptIn(${r.id},${pi})"><span class="chip chip-${t.color}" style="font-size:9px">${t.name}</span><span class="tog-name">${playerName(pi).split(' ')[0]}</span><span class="tog-status">${isIn?'✓ In':'—'}</span></div>`;
     }).join('');
     const totalSkinsInRound = roundSkins.length;
     const perSkinValue = (pot > 0 && totalSkinsInRound > 0) ? pot / totalSkinsInRound : 0;
@@ -2142,7 +2245,8 @@ function renderSkins(){
     const skinRows = roundSkins.map(s => {
       const winnerChip = `<span class="chip chip-${playerTeam(s.winner).color}" style="font-size:10px">${playerName(s.winner).split(' ')[0]}</span>`;
       const amt = perSkinValue > 0 ? ` CA$${perSkinValue.toFixed(2)}` : '';
-      return `<div class="skin-row"><span class="skin-hole">H${s.h+1}</span><span>${winnerChip} <span style="font-size:11px;color:var(--ink-lt)">net ${s.net}</span></span><span class="skin-val">${isFinalized?'💰':'📊'}${amt}${!isFinalized?'<span style="font-size:9px;color:var(--ink-lt);margin-left:4px">projected</span>':''}</span></div>`;
+      const hn = holeName(r.id, s.h);
+      return `<div class="skin-row"><span class="skin-hole">H${s.h+1}</span><span>${winnerChip} <span style="font-size:11px;color:var(--ink-lt)">net ${s.net}${hn?` · <em>${hn}</em>`:''}</span></span><span class="skin-val">${isFinalized?'💰':'📊'}${amt}${!isFinalized?'<span style="font-size:9px;color:var(--ink-lt);margin-left:4px">projected</span>':''}</span></div>`;
     }).join('');
     const pushedRows = pushedHoles.map(p => {
       const tiedChips = p.tiedPlayers.map(pi=>`<span class="chip chip-${playerTeam(pi).color}" style="font-size:10px">${playerName(pi).split(' ')[0]}</span>`).join(' ');
@@ -2150,7 +2254,7 @@ function renderSkins(){
     }).join('');
     const projNote = !isFinalized && (roundSkins.length+pushedHoles.length)>0 ? `<div style="padding:8px 14px 2px;font-size:11px;color:var(--ink-lt)">📊 Projected — not official until round is finalized</div>` : '';
     const noScores = inPlayers.length>0 && roundSkins.length===0 && pushedHoles.length===0 ? `<div style="padding:12px 14px;font-size:12px;color:var(--ink-lt)">Scores not yet entered.</div>` : '';
-    html += `<div class="skins-round-block"><div class="skins-round-head"><div><div class="skins-round-title">R${r.num} · ${r.course}</div><div style="font-size:10px;color:var(--ink-lt);margin-top:2px">${r.date} · ${r.label}${isFinalized?' · <span style="color:var(--won);font-weight:700">✓ Finalized</span>':''}</div></div><div class="skins-stake-row"><span>CA$</span><input type="number" min="0" step="5" value="${stake}" ${roundLocked?'disabled style="opacity:.6"':''} onchange="setSkinStake(${r.id},this.value)" style="width:60px"/><span>buy-in</span>${inPlayers.length>0&&pot>0?`<span class="pts-badge" style="margin-left:4px">Pot: CA$${pot}</span>`:''} ${roundLocked?`<span class="skins-locked-label">🔒 Locked</span>`:''}</div></div><div class="skins-optin-grid">${optGrid}</div>${inPlayers.length>0?`<div class="skins-pot-summary">${potPills}</div>`:''}<div class="skins-results">${projNote}${skinRows}${pushedRows}${noScores}</div></div>`;
+    html += `<div class="skins-round-block"><div class="skins-round-head"><div><div class="skins-round-title">R${r.num} · ${r.course}</div><div style="font-size:10px;color:var(--ink-lt);margin-top:2px">${r.date} · ${r.label}${isFinalized?' · <span style="color:var(--won);font-weight:700">✓ Finalized</span>':''}</div></div><div class="skins-stake-row"><span>CA$</span><input type="number" min="0" step="5" value="${stake}" onchange="setSkinStake(${r.id},this.value)" style="width:60px"/><span>buy-in</span>${inPlayers.length>0&&pot>0?`<span class="pts-badge" style="margin-left:4px">Pot: CA$${pot}</span>`:''} ${roundLocked?`<span class="skins-locked-label" title="Round is locked, but skins opt-ins can still be corrected here — payouts recalculate automatically">🔒 Round locked · admin edits OK</span>`:''}</div></div><div class="skins-optin-grid">${optGrid}</div>${inPlayers.length>0?`<div class="skins-pot-summary">${potPills}</div>`:''}<div class="skins-results">${projNote}${skinRows}${pushedRows}${noScores}</div></div>`;
   });
   el.innerHTML = html;
 }
@@ -2191,21 +2295,25 @@ function renderLiveStatus(rndId){
   // NS: live net stroke leaderboard
   if(r.format === 'NS'){
     const hasScores = live.standings.some(x => x.holesPlayed > 0);
-    let html = `<div class="card" style="overflow:hidden"><div class="card-head"><span class="card-title">R${r.num} · ${r.course}</span><span style="font-size:11px;color:var(--ink-lt)">${r.date} · Net Stroke Play</span></div>`;
+    let html = `<div class="card" style="overflow:hidden"><div class="card-head"><span class="card-title">R${r.num} · ${r.course}</span><span style="font-size:11px;color:var(--ink-lt)">${r.date} · Net Stroke Play · ranked by net to par</span></div>`;
     if(!hasScores){ html += `<div class="empty-state" style="padding:32px">Waiting for scores…</div>`; }
     else {
       let pos = 0;
       live.standings.forEach((row, i) => {
-        if(i>0 && row.netTotal!==live.standings[i-1].netTotal && live.standings[i-1].holesPlayed>0) pos=i;
+        if(i>0 && row.netToPar!==live.standings[i-1].netToPar && live.standings[i-1].holesPlayed>0) pos=i;
         const t = playerTeam(row.pi); const isMe = row.pi === meSlot;
-        const netStr = row.holesPlayed ? fmtToPar(row.netTotal) : '—';
-        const netClr = row.holesPlayed ? toParColor(row.netTotal) : 'var(--ink-lt)';
+        const netStr = row.holesPlayed ? fmtToPar(row.netToPar) : '—';
+        const netClr = row.holesPlayed ? toParColor(row.netToPar) : 'var(--ink-lt)';
+        const detailStr = row.holesPlayed
+          ? `Net ${row.netTotal} · Gross ${row.grossTotal} <span style="color:${toParColor(row.grossToPar)}">(${fmtToPar(row.grossToPar)})</span>`
+          : '';
         const expandId = `lsb-expand-${rndId}-${row.pi}`;
-        html += `<div class="lsb-ns-row" onclick="lsbToggleExpand('${expandId}')"><div class="lsb-ns-pos">${row.holesPlayed?pos+1:'—'}</div><div><span class="chip chip-${t.color}" style="font-size:10px">${t.name}</span> <strong>${playerName(row.pi)}</strong>${isMe?`<span style="background:var(--gold);color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:8px;margin-left:4px">YOU</span>`:''}</div><div class="lsb-ns-score" style="color:${netClr}">${netStr}</div><div class="lsb-ns-holes">${row.holesPlayed?row.holesPlayed+' holes':''}</div></div><div class="lsb-ns-expand" id="${expandId}" style="display:none">${livePlayerScorecard(rndId, row.pi)}</div>`;
+        html += `<div class="lsb-ns-row" onclick="lsbToggleExpand('${expandId}')"><div class="lsb-ns-pos">${row.holesPlayed?pos+1:'—'}</div><div><span class="chip chip-${t.color}" style="font-size:10px">${t.name}</span> <strong>${playerName(row.pi)}</strong>${isMe?`<span style="background:var(--gold);color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:8px;margin-left:4px">YOU</span>`:''}${detailStr?`<div style="font-size:10px;color:var(--ink-lt);margin-top:2px">${detailStr}</div>`:''}</div><div class="lsb-ns-score" style="color:${netClr};text-align:right">${netStr}<div style="font-size:9px;font-weight:400;color:var(--ink-lt);letter-spacing:.05em">NET</div></div><div class="lsb-ns-holes">${row.holesPlayed?'thru '+row.holesPlayed:''}</div></div><div class="lsb-ns-expand" id="${expandId}" style="display:none">${livePlayerScorecard(rndId, row.pi)}</div>`;
       });
     }
     html += `</div>`;
     if(!isFinalized && hasScores) html += `<div style="margin-top:14px"><button class="btn btn-gold" style="width:100%;padding:14px;font-size:15px" onclick="finalizeRound(${rndId})">🏁 Finalize Round ${r.num} → Post to Standings</button><div style="text-align:center;font-size:11px;color:var(--ink-lt);margin-top:6px">Official results only update standings when you finalize</div></div>`;
+    html += renderSkinsCard(rndId, isFinalized);
     return html;
   }
 
@@ -2229,7 +2337,7 @@ function renderLiveStatus(rndId){
       const fmtA = r.format==='BB' ? `${pairA.map(pi=>playerName(pi).split(' ')[0]).join('+')} · Best ${relLabel(lastHole.bestA,par)}` : relLabel(lastHole.bestA,par);
       const fmtB = r.format==='BB' ? `${pairB.map(pi=>playerName(pi).split(' ')[0]).join('+')} · Best ${relLabel(lastHole.bestB,par)}` : relLabel(lastHole.bestB,par);
       const holeWinnerLabel = lastHole.won==='A' ? `${pairA.map(pi=>playerName(pi).split(' ')[0]).join('+')} wins hole` : lastHole.won==='B' ? `${pairB.map(pi=>playerName(pi).split(' ')[0]).join('+')} wins hole` : 'Hole halved';
-      holeEventHtml = `<div class="lsb-match-body"><div style="font-size:10px;font-weight:700;color:var(--ink-lt);text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px">Last: Hole ${lastHole.hole} · Par ${par}</div><div style="font-size:12px;margin-bottom:3px">${sideANames}: ${fmtA}</div><div style="font-size:12px;margin-bottom:3px">${sideBNames}: ${fmtB}</div><div style="font-size:12px;font-weight:600;color:${lastHole.won==='H'?'var(--halve)':'var(--green)'}">${holeWinnerLabel}</div></div>`;
+      holeEventHtml = `<div class="lsb-match-body"><div style="font-size:10px;font-weight:700;color:var(--ink-lt);text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px">Last: Hole ${lastHole.hole}${holeName(rndId,lastHole.hole-1)?` \u00b7 \u201c${holeName(rndId,lastHole.hole-1)}\u201d`:''} · Par ${par}</div><div style="font-size:12px;margin-bottom:3px">${sideANames}: ${fmtA}</div><div style="font-size:12px;margin-bottom:3px">${sideBNames}: ${fmtB}</div><div style="font-size:12px;font-weight:600;color:${lastHole.won==='H'?'var(--halve)':'var(--green)'}">${holeWinnerLabel}</div></div>`;
     }
     const throughStr = holesPlayed>0 ? `Through ${holesPlayed}${holesPlayed<18?` · ${holesRemaining} to play`:''}` : 'Not started';
     html += `<div class="lsb-match-card"><div class="lsb-match-head"><div><div class="lsb-match-teams">${sideANames} <span style="color:var(--ink-lt);font-size:11px;margin:0 5px">vs</span> ${sideBNames}</div><div class="lsb-match-through">${throughStr}</div></div><div style="text-align:right"><div class="lsb-match-score" style="color:${scoreClr};font-family:'Playfair Display',serif;font-size:22px;font-weight:700">${statusLabel}</div>${savedResult?`<div style="font-size:10px;color:var(--won);margin-top:2px">✓ ${savedResult.note}</div>`:''}</div></div>${holeEventHtml}</div>`;
@@ -2239,14 +2347,18 @@ function renderLiveStatus(rndId){
   if(!isFinalized && anyComplete) html += `<div style="margin-top:14px"><button class="btn btn-gold" style="width:100%;padding:14px;font-size:15px" onclick="finalizeRound(${rndId})">🏁 Finalize Round ${r.num} → Post to Standings</button><div style="text-align:center;font-size:11px;color:var(--ink-lt);margin-top:6px">Official results only update standings when you finalize</div></div>`;
 
   // Projected skins
-  const skinData = computeSkinsForRound(rndId);
-  if(skinData.inPlayers.length>0 && skinData.roundSkins.length>0){
-    const perSkinValue = skinData.pot>0 ? skinData.pot/skinData.roundSkins.length : 0;
-    const skinWinRows = skinData.roundSkins.map(s=>{const wc=`<span class="chip chip-${playerTeam(s.winner).color}" style="font-size:10px">${playerName(s.winner).split(' ')[0]}</span>`;const amt=perSkinValue>0?` CA$${perSkinValue.toFixed(2)}`:'';return `<div class="skin-row"><span class="skin-hole">H${s.h+1}</span><span>${wc} net ${s.net}</span><span class="skin-val">${isFinalized?'💰':'📊'}${amt}</span></div>`;}).join('');
-    const skinPushRows = skinData.pushedHoles.map(p=>{const tc=p.tiedPlayers.map(pi=>`<span class="chip chip-${playerTeam(pi).color}" style="font-size:10px">${playerName(pi).split(' ')[0]}</span>`).join(' ');return `<div class="skin-row" style="opacity:.55"><span class="skin-hole">H${p.h+1}</span><span>${tc} net ${p.net} · tied</span><span class="skin-val" style="color:var(--ink-lt)">— pushed</span></div>`;}).join('');
-    html += `<div class="card" style="margin-top:14px"><div class="card-head"><span class="card-title">${isFinalized?'💰 Skins':'📊 Projected Skins'}</span>${!isFinalized?`<span style="font-size:10px;color:var(--ink-lt);background:var(--cream-dk);padding:3px 8px;border-radius:8px">Unofficial until finalized</span>`:''}</div><div>${skinWinRows}${skinPushRows}</div></div>`;
-  }
+  html += renderSkinsCard(rndId, isFinalized);
   return html;
+}
+
+// Shared skins card for the Live tab — used by both NS and match-format rounds
+function renderSkinsCard(rndId, isFinalized){
+  const skinData = computeSkinsForRound(rndId);
+  if(skinData.inPlayers.length === 0 || (skinData.roundSkins.length === 0 && skinData.pushedHoles.length === 0)) return '';
+  const perSkinValue = (skinData.pot>0 && skinData.roundSkins.length>0) ? skinData.pot/skinData.roundSkins.length : 0;
+  const skinWinRows = skinData.roundSkins.map(s=>{const wc=`<span class="chip chip-${playerTeam(s.winner).color}" style="font-size:10px">${playerName(s.winner).split(' ')[0]}</span>`;const amt=perSkinValue>0?` CA$${perSkinValue.toFixed(2)}`:'';const hn=holeName(rndId,s.h);return `<div class="skin-row"><span class="skin-hole">H${s.h+1}</span><span>${wc} net ${s.net}${hn?` · <em style="font-size:11px;color:var(--ink-lt)">${hn}</em>`:''}</span><span class="skin-val">${isFinalized?'💰':'📊'}${amt}</span></div>`;}).join('');
+  const skinPushRows = skinData.pushedHoles.map(p=>{const tc=p.tiedPlayers.map(pi=>`<span class="chip chip-${playerTeam(pi).color}" style="font-size:10px">${playerName(pi).split(' ')[0]}</span>`).join(' ');return `<div class="skin-row" style="opacity:.55"><span class="skin-hole">H${p.h+1}</span><span>${tc} net ${p.net} · tied</span><span class="skin-val" style="color:var(--ink-lt)">— pushed</span></div>`;}).join('');
+  return `<div class="card" style="margin-top:14px"><div class="card-head"><span class="card-title">${isFinalized?'💰 Skins':'📊 Projected Skins'}</span>${!isFinalized?`<span style="font-size:10px;color:var(--ink-lt);background:var(--cream-dk);padding:3px 8px;border-radius:8px">Unofficial until finalized</span>`:''}</div><div>${skinWinRows}${skinPushRows}</div></div>`;
 }
 
 function renderLiveScorecard(rndId){
@@ -2256,9 +2368,13 @@ function renderLiveScorecard(rndId){
     const c = COURSES[r.course]; const chcp = courseHcp(STATE.players[pi].hi, getRoundTee(rndId).slope, getRoundTee(rndId).rating, getRoundTee(rndId).par);
     const isMe = pi === meSlot; const t = playerTeam(pi);
     const expandId = `sc-expand-${rndId}-${pi}`;
-    let netTotal=0, holesPlayed=0;
-    c.pars.forEach((_,h)=>{ let g=null; if(r.format==='NS') g=parseInt(STATE.scores[rndId]?.gross?.[pi]?.[h])||0; else if(STATE.scores[rndId]?.matches){ for(const m of Object.values(STATE.scores[rndId].matches)){const v=parseInt(m.gross?.[pi]?.[h]);if(v>0){g=v;break;}}} if(g){netTotal+=g-strokesOnHole(chcp,c.si[h]);holesPlayed++;} });
-    const netStr = holesPlayed ? `${netTotal} net` : '—';
+    let netTotal=0, grossTotal=0, holesPlayed=0, parPlayed=0;
+    c.pars.forEach((par,h)=>{ let g=null; if(r.format==='NS') g=parseInt(STATE.scores[rndId]?.gross?.[pi]?.[h])||0; else if(STATE.scores[rndId]?.matches){ for(const m of Object.values(STATE.scores[rndId].matches)){const v=parseInt(m.gross?.[pi]?.[h]);if(v>0){g=v;break;}}} if(g){netTotal+=g-strokesOnHole(chcp,c.si[h]);grossTotal+=g;holesPlayed++;parPlayed+=par;} });
+    const fmtTP = v => v===0?'E':v>0?'+'+v:''+v;
+    const tpClr = v => v<0?'var(--won)':v>0?'var(--lost)':'var(--ink)';
+    const netStr = holesPlayed
+      ? `Gross ${grossTotal} <span style="color:${tpClr(grossTotal-parPlayed)};font-weight:700">(${fmtTP(grossTotal-parPlayed)})</span> · Net ${netTotal} <span style="color:${tpClr(netTotal-parPlayed)};font-weight:700">(${fmtTP(netTotal-parPlayed)})</span>`
+      : '—';
     html += `<div style="border-bottom:1px solid var(--cream-dk)"><div class="lsb-ns-row" onclick="lsbToggleExpand('${expandId}')" style="cursor:pointer"><div class="lsb-ns-pos">${isMe?'★':'·'}</div><div><span class="chip chip-${t.color}" style="font-size:10px">${t.name}</span> <strong>${playerName(pi)}</strong>${isMe?` <span style="background:var(--gold);color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:8px">YOU</span>`:''}</div><div style="font-size:12px;color:var(--ink-md);text-align:right">${netStr}</div><div class="lsb-ns-holes">${holesPlayed?holesPlayed+' holes':''}</div></div><div id="${expandId}" style="display:none">${livePlayerScorecard(rndId, pi)}</div></div>`;
   });
   html += `</div>`;
@@ -2277,7 +2393,7 @@ function renderLiveTrip(){
 function livePlayerScorecard(rndId, pi){
   const r = ROUNDS[rndId]; const c = COURSES[r.course];
   const chcp = courseHcp(STATE.players[pi].hi, getRoundTee(rndId).slope, getRoundTee(rndId).rating, getRoundTee(rndId).par);
-  let cells = '', total=0, netTotal=0;
+  let cells = '', total=0, netTotal=0, parPlayed=0;
   c.pars.forEach((par,h)=>{
     let g=null;
     if(r.format==='NS') g=parseInt(STATE.scores[rndId]?.gross?.[pi]?.[h])||0;
@@ -2285,10 +2401,13 @@ function livePlayerScorecard(rndId, pi){
     const st=strokesOnHole(chcp,c.si[h]); const net=g?g-st:0; const rel=g?g-par:null;
     const bgClr=rel===null?'#f5f5f5':rel<=-2?'#e8f7fb':rel===-1?'#d1fae5':rel===0?'#fff':rel===1?'#fff8ee':'#fee2e2';
     const txtClr=rel===null?'#bbb':rel<=-2?'#1a6b8a':rel===-1?'var(--won)':rel===0?'var(--ink)':rel===1?'#b05a00':'var(--lost)';
-    if(g){total+=g;netTotal+=net;}
+    if(g){total+=g;netTotal+=net;parPlayed+=par;}
     cells+=`<td style="text-align:center;padding:5px 3px;background:${bgClr};color:${txtClr};font-weight:${g?700:400};font-size:12px">${g||'—'}</td>`;
   });
-  return `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px"><thead><tr><th style="padding:4px 6px;text-align:left;background:var(--green);color:var(--gold-lt)">HCP ${chcp}</th>${c.pars.map((_,h)=>`<th style="padding:4px 2px;text-align:center;background:var(--green);color:var(--gold-lt)">${h+1}</th>`).join('')}<th style="padding:4px 6px;background:var(--green);color:var(--gold-lt)">Net</th></tr></thead><tbody><tr><td style="padding:5px 6px;font-size:10px;color:var(--ink-lt)">Par</td>${c.pars.map(p=>`<td style="text-align:center;padding:5px 3px;font-size:10px;color:var(--ink-lt)">${p}</td>`).join('')}<td></td></tr><tr><td style="padding:5px 6px;font-weight:600">${playerName(pi).split(' ')[0]}</td>${cells}<td style="padding:5px 6px;font-weight:700;color:var(--green)">${netTotal||'—'}</td></tr></tbody></table></div>`;
+  const fmtTP2 = v => v===0?'E':v>0?'+'+v:''+v;
+  const grossCell = total ? `${total}<div style="font-size:9px;color:${total-parPlayed<0?'var(--won)':total-parPlayed>0?'var(--lost)':'var(--ink-lt)'}">${fmtTP2(total-parPlayed)}</div>` : '—';
+  const netCell = total ? `${netTotal}<div style="font-size:9px;color:${netTotal-parPlayed<0?'var(--won)':netTotal-parPlayed>0?'var(--lost)':'var(--ink-lt)'}">${fmtTP2(netTotal-parPlayed)}</div>` : '—';
+  return `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px"><thead><tr><th style="padding:4px 6px;text-align:left;background:var(--green);color:var(--gold-lt)">HCP ${chcp}</th>${c.pars.map((_,h)=>`<th style="padding:4px 2px;text-align:center;background:var(--green);color:var(--gold-lt)">${h+1}</th>`).join('')}<th style="padding:4px 6px;background:var(--green);color:var(--gold-lt)">Gross</th><th style="padding:4px 6px;background:var(--green);color:var(--gold-lt)">Net</th></tr></thead><tbody><tr><td style="padding:5px 6px;font-size:10px;color:var(--ink-lt)">Par</td>${c.pars.map(p=>`<td style="text-align:center;padding:5px 3px;font-size:10px;color:var(--ink-lt)">${p}</td>`).join('')}<td></td><td></td></tr><tr><td style="padding:5px 6px;font-weight:600">${playerName(pi).split(' ')[0]}</td>${cells}<td style="padding:5px 6px;font-weight:700;color:var(--ink);text-align:center">${grossCell}</td><td style="padding:5px 6px;font-weight:700;color:var(--green);text-align:center">${netCell}</td></tr></tbody></table></div>`;
 }
 
 function lsbToggleExpand(id){ const el=document.getElementById(id); if(el) el.style.display=el.style.display==='none'?'':'none'; }
