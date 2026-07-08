@@ -666,7 +666,7 @@ function connectRealtime(){
 function handleRealtimeEvent(table, event, record, oldRecord){
   if(table === 'players' && record){
     const i = record.slot;
-    STATE.players[i] = {name: PLAYER_NAMES[i], hi: parseFloat(record.hi), buyin: parseInt(record.buyin)};
+    STATE.players[i] = {name: PLAYER_NAMES[i], hi: PLAYER_HI[i], buyin: parseInt(record.buyin)||500};
     renderPlayers(); updateHero();
   }
   if(table === 'draws' && record){
@@ -814,9 +814,11 @@ function setRoundTee(rndId, teeIdx){
 // STATE
 // ═══════════════════════════════════════════════════════════
 const PLAYER_NAMES = ['Cody','Dan','Jess','Ben','Mike','Jim','Stephen','Blair'];
+// Handicap indexes locked in for the trip (same order as PLAYER_NAMES)
+const PLAYER_HI = [12.2, 20.8, 7.8, 2.0, 15.5, 7.0, 10.0, 10.7];
 
 let STATE = {
-  players: PLAYER_NAMES.map(name=>({name,hi:10,buyin:100})),
+  players: PLAYER_NAMES.map((name,i)=>({name,hi:PLAYER_HI[i],buyin:500})),
   draws:   Array(7).fill(null),
   scores:  Array(7).fill(null),
   results: Array(7).fill(null),
@@ -915,8 +917,8 @@ function loadLocal(){
     if(snap.drawLocks)  STATE.drawLocks  = snap.drawLocks;
     if(snap.roundLocks) STATE.roundLocks = snap.roundLocks;
     if(snap.tees)       STATE.tees       = snap.tees;
-    // Always stamp canonical names — never let stale cached names show
-    PLAYER_NAMES.forEach((name,i)=>{ if(STATE.players[i]) STATE.players[i].name = name; });
+    // Always stamp canonical names & locked handicap indexes — never let stale cached values show
+    PLAYER_NAMES.forEach((name,i)=>{ if(STATE.players[i]){ STATE.players[i].name = name; STATE.players[i].hi = PLAYER_HI[i]; } });
     return true;
   }catch(e){ return false; }
 }
@@ -940,7 +942,7 @@ async function loadAll(){
     ]);
 
     players.forEach(p=>{
-      STATE.players[p.slot] = {name:PLAYER_NAMES[p.slot], hi:parseFloat(p.hi), buyin:parseInt(p.buyin)};
+      STATE.players[p.slot] = {name:PLAYER_NAMES[p.slot], hi:PLAYER_HI[p.slot], buyin:parseInt(p.buyin)||500};
     });
     draws.forEach(d=>{ STATE.draws[d.round_id] = d.pairs; });
     scores.forEach(s=>{ STATE.scores[s.round_id] = s.data; });
@@ -1071,7 +1073,7 @@ function showAlert(msg,type){
 // ═══════════════════════════════════════════════════════════
 function renderPlayers(){
   const el=document.getElementById('playerForms');
-  const sharedBuyin = STATE.players[0]?.buyin || 100;
+  const sharedBuyin = STATE.players[0]?.buyin || 500;
   const gbEl = document.getElementById('groupBuyin');
   if(gbEl && !gbEl._dirty) gbEl.value = sharedBuyin;
   el.innerHTML=TEAMS.map(t=>`
@@ -1081,7 +1083,7 @@ function renderPlayers(){
         const p=STATE.players[pi];
         return `<div class="form-row" style="margin-bottom:10px;grid-template-columns:1fr 120px">
           <div style="display:flex;align-items:center;padding:8px 10px;background:var(--cream-dk);border-radius:8px;font-weight:600;font-size:14px">${p.name}</div>
-          <div><label>Handicap Index</label><input type="number" id="phi${pi}" value="${p.hi}" step="0.1" min="0" max="54"/></div>
+          <div><label>Handicap Index</label><div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:var(--cream-dk);border-radius:8px;font-weight:700;font-size:14px">${PLAYER_HI[pi].toFixed(1)} <span style="font-size:11px" title="Handicap indexes are locked in for the trip">🔒</span></div></div>
         </div>`;
       }).join('')}
     </div>`).join('');
@@ -1089,10 +1091,10 @@ function renderPlayers(){
 
 async function saveAllPlayers(){
   const updates = [];
-  const sharedBuyin = parseFloat(document.getElementById('groupBuyin')?.value)||100;
+  const sharedBuyin = parseFloat(document.getElementById('groupBuyin')?.value)||500;
   for(let i=0;i<8;i++){
     const name = PLAYER_NAMES[i];
-    const hi   = parseFloat(document.getElementById('phi'+i)?.value)||10;
+    const hi   = PLAYER_HI[i]; // locked in for the trip
     const buyin= sharedBuyin;
     STATE.players[i] = {name,hi,buyin};
     updates.push(
