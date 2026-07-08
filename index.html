@@ -2440,15 +2440,23 @@ function lsbPlayerScorecard(rndId,pi){ return livePlayerScorecard(rndId,pi); }
 // SETTLEMENT
 // ═══════════════════════════════════════════════════════════
 function renderSettlement(){
-  const totalPot=STATE.players.reduce((a,p)=>a+p.buyin,0);
-  const skinsPot=STATE.players.reduce((a,p)=>a+(p.buyin||0),0)*0.25; // 25% of pot to skins
-  const teamPot=totalPot - skinsPot; // rest goes to teams
+  // Buy-ins fund the Ryder Cup pot only. Skins are funded solely by the
+  // per-round opt-in stakes (computed below in skinsNet).
+  const totalPot=STATE.players.reduce((a,p)=>a+(p.buyin||0),0);
   const {tp,pp}=computePoints();
   const sortedTeams=[...TEAMS].map((t,i)=>({...t,...tp[i]})).sort((a,b)=>b.pts-a.pts);
 
-  // 2nd place gets their buy-in back; 1st place gets everything else
+  // 2nd place team wins their buy-ins back; 1st place team takes the remainder
   const secondBuyin = sortedTeams[1] ? sortedTeams[1].players.reduce((a,pi)=>a+(STATE.players[pi]?.buyin||0),0) : 0;
-  const teamPrizes = [teamPot - secondBuyin, secondBuyin, 0, 0];
+  const teamPrizes = [totalPot - secondBuyin, secondBuyin, 0, 0];
+
+  // Warn when a points tie straddles a prize boundary (1st/2nd or 2nd/3rd)
+  const anyScored = sortedTeams.some(t=>t.pts>0);
+  const tieAtTop = anyScored && sortedTeams[0].pts === sortedTeams[1]?.pts;
+  const tieAtRefund = anyScored && sortedTeams[1] && sortedTeams[2] && sortedTeams[1].pts === sortedTeams[2].pts;
+  const tieNote = (tieAtTop || tieAtRefund)
+    ? `<div style="font-size:11px;color:#b05a00;padding:6px 14px 2px">⚠️ Teams are tied ${tieAtTop?'for 1st':'for 2nd'} on points — prize order below is provisional until the tie is settled.</div>`
+    : '';
 
   // Compute skins net per player across all rounds
   const skinsNet = Array(8).fill(0);
@@ -2495,10 +2503,11 @@ function renderSettlement(){
 
   document.getElementById('settlementBody').innerHTML=`
     <div class="info-box" style="margin-bottom:14px">
-      <strong>Total Pot: CA$${totalPot}</strong> &nbsp;|&nbsp; Teams: CA$${teamPot.toFixed(0)} &nbsp;|&nbsp; Skins: CA$${skinsPot.toFixed(0)} (from buy-in)
+      <strong>Ryder Cup Pot: CA$${totalPot}</strong> (all buy-ins) &nbsp;|&nbsp; 🥇 1st: CA$${teamPrizes[0].toFixed(0)} &nbsp;|&nbsp; 🥈 2nd: CA$${teamPrizes[1].toFixed(0)} (buy-ins back)
     </div>
     <div class="section-title">Team Prizes</div>
-    <div style="font-size:11px;color:var(--ink-lt);padding:6px 14px 4px">1st place wins the pot; 2nd place wins their buy-in back.</div>
+    <div style="font-size:11px;color:var(--ink-lt);padding:6px 14px 4px">2nd place team wins their money back; the remainder goes to the winning team. Skins are separate and paid only from the daily opt-in stakes.</div>
+    ${tieNote}
     ${sortedTeams.map((t,i)=>`<div class="settle-row">
       <span><span class="chip chip-${t.color}">${t.name}</span> <strong>#${i+1}</strong> — ${t.pts} pts</span>
       <span class="${teamPrizes[i]>0?'settle-pos':''}">CA$${teamPrizes[i].toFixed(0)}</span>
@@ -2512,7 +2521,7 @@ function renderSettlement(){
       const label = net>0?`+CA$${net.toFixed(0)}`:`−CA$${Math.abs(net).toFixed(0)}`;
       return `<div class="settle-row"><span><span class="chip chip-${playerTeam(pi).color}">${playerTeam(pi).name}</span> <strong>${playerName(pi)}</strong></span><span class="${cls}">${label}</span></div>`;
     }).join('')}
-    <div style="font-size:11px;color:var(--ink-lt);padding:10px 14px">Skins settled on-course round by round. Buy-in skins pool (CA$${skinsPot.toFixed(0)}) paid out separately at end of trip.</div>`;
+    <div style="font-size:11px;color:var(--ink-lt);padding:10px 14px">Skins pots come entirely from each round's opt-in buy-ins and are settled on-course round by round. Figures above are each player's running net across the trip.</div>`;
 }
 
 // ═══════════════════════════════════════════════════════════
