@@ -497,7 +497,7 @@ if('serviceWorker' in navigator){
       <div class="card-body">
         <div class="info-box" style="margin-bottom:14px">Enter each player's <strong>Handicap Index</strong>. Set the shared buy-in amount below — everyone pays the same.</div>
         <div class="form-row" style="margin-bottom:16px;max-width:240px">
-          <div><label>💰 Buy-in per person CA$</label><input type="number" id="groupBuyin" value="100" step="5" min="0"/></div>
+          <div><label>💰 Buy-in per person</label><div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--cream-dk);border-radius:8px;font-weight:700;font-size:15px">CA$500 <span style="font-size:11px" title="Buy-in is locked in for the trip">🔒</span></div></div>
         </div>
         <div id="playerForms"></div>
       </div>
@@ -666,7 +666,7 @@ function connectRealtime(){
 function handleRealtimeEvent(table, event, record, oldRecord){
   if(table === 'players' && record){
     const i = record.slot;
-    STATE.players[i] = {name: PLAYER_NAMES[i], hi: PLAYER_HI[i], buyin: parseInt(record.buyin)||500};
+    STATE.players[i] = {name: PLAYER_NAMES[i], hi: PLAYER_HI[i], buyin: BUY_IN};
     renderPlayers(); updateHero();
   }
   if(table === 'draws' && record){
@@ -814,11 +814,13 @@ function setRoundTee(rndId, teeIdx){
 // STATE
 // ═══════════════════════════════════════════════════════════
 const PLAYER_NAMES = ['Cody','Dan','Jess','Ben','Mike','Jim','Stephen','Blair'];
+// Buy-in locked in for the trip (CA$ per person, funds the Ryder Cup pot)
+const BUY_IN = 500;
 // Handicap indexes locked in for the trip (same order as PLAYER_NAMES)
-const PLAYER_HI = [12.2, 20.8, 7.8, 2.0, 15.5, 7.0, 10.0, 10.7];
+const PLAYER_HI = [12.2, 20.8, 7.8, 2.0, 15.5, 7.0, 0.0, 10.7];
 
 let STATE = {
-  players: PLAYER_NAMES.map((name,i)=>({name,hi:PLAYER_HI[i],buyin:500})),
+  players: PLAYER_NAMES.map((name,i)=>({name,hi:PLAYER_HI[i],buyin:BUY_IN})),
   draws:   Array(7).fill(null),
   scores:  Array(7).fill(null),
   results: Array(7).fill(null),
@@ -918,7 +920,7 @@ function loadLocal(){
     if(snap.roundLocks) STATE.roundLocks = snap.roundLocks;
     if(snap.tees)       STATE.tees       = snap.tees;
     // Always stamp canonical names & locked handicap indexes — never let stale cached values show
-    PLAYER_NAMES.forEach((name,i)=>{ if(STATE.players[i]){ STATE.players[i].name = name; STATE.players[i].hi = PLAYER_HI[i]; } });
+    PLAYER_NAMES.forEach((name,i)=>{ if(STATE.players[i]){ STATE.players[i].name = name; STATE.players[i].hi = PLAYER_HI[i]; STATE.players[i].buyin = BUY_IN; } });
     return true;
   }catch(e){ return false; }
 }
@@ -942,7 +944,7 @@ async function loadAll(){
     ]);
 
     players.forEach(p=>{
-      STATE.players[p.slot] = {name:PLAYER_NAMES[p.slot], hi:PLAYER_HI[p.slot], buyin:parseInt(p.buyin)||500};
+      STATE.players[p.slot] = {name:PLAYER_NAMES[p.slot], hi:PLAYER_HI[p.slot], buyin:BUY_IN};
     });
     draws.forEach(d=>{ STATE.draws[d.round_id] = d.pairs; });
     scores.forEach(s=>{ STATE.scores[s.round_id] = s.data; });
@@ -1073,9 +1075,6 @@ function showAlert(msg,type){
 // ═══════════════════════════════════════════════════════════
 function renderPlayers(){
   const el=document.getElementById('playerForms');
-  const sharedBuyin = STATE.players[0]?.buyin || 500;
-  const gbEl = document.getElementById('groupBuyin');
-  if(gbEl && !gbEl._dirty) gbEl.value = sharedBuyin;
   el.innerHTML=TEAMS.map(t=>`
     <div style="margin-bottom:18px">
       <div class="section-title"><span class="chip chip-${t.color}">${t.name}</span></div>
@@ -1091,11 +1090,10 @@ function renderPlayers(){
 
 async function saveAllPlayers(){
   const updates = [];
-  const sharedBuyin = parseFloat(document.getElementById('groupBuyin')?.value)||500;
   for(let i=0;i<8;i++){
     const name = PLAYER_NAMES[i];
     const hi   = PLAYER_HI[i]; // locked in for the trip
-    const buyin= sharedBuyin;
+    const buyin= BUY_IN;       // locked in for the trip
     STATE.players[i] = {name,hi,buyin};
     updates.push(
       sb('players', {
