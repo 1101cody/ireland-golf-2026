@@ -1672,27 +1672,33 @@ function sv2MatchStatusHtml(rndId, groupIdx, groupPlayers){
   if(!matchup) return '';
   const [pairA, pairB] = matchup;
 
-  // Single source of truth: the same hole-by-hole match-play engine used by
-  // the Live tab and finalization (best ball = best net per side per hole).
+  // Single source of truth: the same engine used by the Live tab and
+  // finalization (BB = aggregate best-ball; MP/SMP = hole-by-hole match play).
   const ms = calculateMatchLiveStatus(rndId, mkey, pairA, pairB, r.format, c);
   if(ms.holesPlayed === 0) return '';
 
   const nA = pairA.map(pi=>playerName(pi).split(' ')[0]).join('+');
   const nB = pairB.map(pi=>playerName(pi).split(' ')[0]).join('+');
-  let label, cls;
-  if(ms.winner === 'H'){ label = 'Match Halved'; cls = 'sq'; }
-  else if(ms.winner === 'A'){ label = `${nA} win ${ms.over?ms.overReason:`${ms.matchScore} UP`}`; cls = 'up'; }
-  else if(ms.winner === 'B'){ label = `${nB} win ${ms.over?ms.overReason:`${Math.abs(ms.matchScore)} UP`}`; cls = 'dn'; }
-  else if(ms.matchScore === 0){ label = 'All Square'; cls = 'sq'; }
-  else {
-    const n = Math.abs(ms.matchScore);
-    label = `${ms.matchScore>0?nA:nB} ${n} Up${ms.holesRemaining===n?' · Dormie':''}`;
-    cls = ms.matchScore>0 ? 'up' : 'dn';
+  let label, cls, sub;
+  if(r.format === 'BB'){
+    label = ms.statusLabel; cls = ms.statusCls;
+    sub = `Best Ball (team best net) · ${nA} ${ms.totalA} — ${ms.totalB} ${nB} · ${ms.winner ? 'Final' : `Through ${ms.holesPlayed}`}`;
+  } else {
+    if(ms.winner === 'H'){ label = 'Match Halved'; cls = 'sq'; }
+    else if(ms.winner === 'A'){ label = `${nA} win${ms.over?' '+ms.overReason:''}`; cls = 'up'; }
+    else if(ms.winner === 'B'){ label = `${nB} win${ms.over?' '+ms.overReason:''}`; cls = 'dn'; }
+    else if(ms.matchScore === 0){ label = 'All Square'; cls = 'sq'; }
+    else {
+      const n = Math.abs(ms.matchScore);
+      label = `${ms.matchScore>0?nA:nB} ${n} Up${ms.holesRemaining===n?' · Dormie':''}`;
+      cls = ms.matchScore>0 ? 'up' : 'dn';
+    }
+    const fmtName = r.format==='SMP' ? 'Singles Match' : 'Match Play';
+    sub = `${fmtName} · ${ms.winner ? (ms.over ? `Closed out after ${ms.holesPlayed}` : 'Final') : `Through ${ms.holesPlayed}`}`;
   }
-  const fmtName = r.format==='BB' ? 'Best Ball Match' : r.format==='SMP' ? 'Singles Match' : 'Match Play';
   return `<div class="sv2-match-status">
     <div class="sv2-ms-score ${cls}">${label}</div>
-    <div class="sv2-ms-sub">${fmtName} · ${ms.winner ? (ms.over ? `Closed out after ${ms.holesPlayed}` : 'Final') : `Through ${ms.holesPlayed}`}</div>
+    <div class="sv2-ms-sub">${sub}</div>
   </div>`;
 }
 
@@ -1995,10 +2001,10 @@ function calculateLiveStatus(rndId){
   return { format: r.format, matches, matchupDefs };
 }
 
-// calculateMatchLiveStatus: hole-by-hole match play rules.
-// BB = best ball match play (hole winner = lower best-net score per hole).
-// MP/SMP = individual net match play.
-// Applies proper dormie and closed-out logic.
+// calculateMatchLiveStatus: per-matchup status.
+// BB  = best ball AGGREGATE: each side counts its best net per hole,
+//       totaled across the round; low team total wins the matchup.
+// MP/SMP = individual net match play (hole-by-hole, dormie, closeouts).
 function calculateMatchLiveStatus(rndId, mkey, pairA, pairB, fmt, c){
   const tee = getRoundTee(rndId);
   const allIn = [...pairA, ...pairB];
@@ -2015,20 +2021,44 @@ function calculateMatchLiveStatus(rndId, mkey, pairA, pairB, fmt, c){
     return g - strokesOnHole(chcps[pi], c.si[h]);
   }
 
-  // holeResult: compare best net from each side on a single hole.
-  // BB: best net from each 2-player side. MP/SMP: individual net.
-  function holeResult(h){
-    if(fmt === 'BB'){
+  const firstNames = pair => pair.map(pi=>playerName(pi).split(' ')[0]).join('+');
+
+  if(fmt === 'BB'){
+    // ── Aggregate best ball ──
+    let totalA = 0, totalB = 0, holesPlayed = 0;
+    const holeLog = [];
+    c.pars.forEach((par, h) => {
       const aNets = pairA.map(pi => netOf(pi,h)).filter(x => x !== null);
       const bNets = pairB.map(pi => netOf(pi,h)).filter(x => x !== null);
-      if(!aNets.length || !bNets.length) return null;
+      if(!aNets.length || !bNets.length) return;
       const bestA = Math.min(...aNets), bestB = Math.min(...bNets);
-      return { won: bestA < bestB ? 'A' : bestB < bestA ? 'B' : 'H', bestA, bestB };
-    } else {
-      const nA = netOf(pairA[0], h), nB = netOf(pairB[0], h);
-      if(nA === null || nB === null) return null;
-      return { won: nA < nB ? 'A' : nB < nA ? 'B' : 'H', bestA: nA, bestB: nB };
+      totalA += bestA; totalB += bestB; holesPlayed++;
+      const grossA = pairA.map(pi => grossOf(pi,h)).filter(x=>x!==null);
+      const grossB = pairB.map(pi => grossOf(pi,h)).filter(x=>x!==null);
+      holeLog.push({ hole: h+1, par, won: bestA<bestB?'A':bestB<bestA?'B':'H', bestA, bestB, runningScore: totalA-totalB, grossA, grossB });
+    });
+    const diff = totalA - totalB; // negative = A leads (fewer strokes)
+    const holesRemaining = 18 - holesPlayed;
+    const winner = holesPlayed === 18 ? (diff < 0 ? 'A' : diff > 0 ? 'B' : 'H') : null;
+    let statusLabel = 'No scores yet', statusCls = 'sq';
+    if(holesPlayed > 0){
+      if(winner === 'A'){ statusLabel = `${firstNames(pairA)} win by ${Math.abs(diff)}`; statusCls='up'; }
+      else if(winner === 'B'){ statusLabel = `${firstNames(pairB)} win by ${diff}`; statusCls='dn'; }
+      else if(winner === 'H'){ statusLabel = 'Tied — Halved'; statusCls='sq'; }
+      else if(diff === 0){ statusLabel = 'Tied'; statusCls='sq'; }
+      else if(diff < 0){ statusLabel = `${firstNames(pairA)} by ${Math.abs(diff)}`; statusCls='up'; }
+      else { statusLabel = `${firstNames(pairB)} by ${diff}`; statusCls='dn'; }
     }
+    return { mkey, pairA, pairB, fmt, holesPlayed, matchScore: -diff, totalA, totalB, margin: Math.abs(diff),
+             holeLog, over: false, overReason: '', winner, statusLabel, statusCls, holesRemaining };
+  }
+
+  // ── MP/SMP: hole-by-hole net match play ──
+  // holeResult: individual net comparison on a single hole.
+  function holeResult(h){
+    const nA = netOf(pairA[0], h), nB = netOf(pairB[0], h);
+    if(nA === null || nB === null) return null;
+    return { won: nA < nB ? 'A' : nB < nA ? 'B' : 'H', bestA: nA, bestB: nB };
   }
 
   let matchScore = 0; // positive = A up, negative = B up
@@ -2049,12 +2079,8 @@ function calculateMatchLiveStatus(rndId, mkey, pairA, pairB, fmt, c){
       over = true;
       overReason = `${Math.abs(matchScore)}&${holesRemaining}`;
     }
-    const grossA = fmt === 'BB'
-      ? pairA.map(pi => grossOf(pi,h)).filter(x=>x!==null)
-      : [grossOf(pairA[0], h)].filter(x=>x!==null);
-    const grossB = fmt === 'BB'
-      ? pairB.map(pi => grossOf(pi,h)).filter(x=>x!==null)
-      : [grossOf(pairB[0], h)].filter(x=>x!==null);
+    const grossA = [grossOf(pairA[0], h)].filter(x=>x!==null);
+    const grossB = [grossOf(pairB[0], h)].filter(x=>x!==null);
     holeLog.push({ hole: h+1, par, won: res.won, bestA: res.bestA, bestB: res.bestB, runningScore: matchScore, grossA, grossB });
   });
 
@@ -2116,12 +2142,13 @@ function calculateOfficialResult(rndId){
   if(!draw || !live.matches) return null;
   const matchResults = {};
   live.matches.forEach((ms) => {
-    const { mkey, pairA, pairB, matchScore, holesPlayed, over, winner } = ms;
+    const { mkey, pairA, pairB, holesPlayed, over, winner } = ms;
     const maxPts = r.pts;
+    const winTxt = r.format === 'BB' ? `win by ${ms.margin}` : (over ? `win ${ms.overReason}` : 'win on 18');
     let ptsA=0, ptsB=0, note='';
-    if(winner === 'A'){ ptsA=maxPts; note=`${pairA.map(playerName).join('+')} win${over?' '+ms.overReason:' on 18'} → ${maxPts}pts`; }
-    else if(winner === 'B'){ ptsB=maxPts; note=`${pairB.map(playerName).join('+')} win${over?' '+ms.overReason:' on 18'} → ${maxPts}pts`; }
-    else if(holesPlayed === 18){ ptsA=maxPts/2; ptsB=maxPts/2; note=`Halved → ${maxPts/2}pts each`; }
+    if(winner === 'A'){ ptsA=maxPts; note=`${pairA.map(playerName).join('+')} ${winTxt} → ${maxPts}pts`; }
+    else if(winner === 'B'){ ptsB=maxPts; note=`${pairB.map(playerName).join('+')} ${winTxt} → ${maxPts}pts`; }
+    else if(winner === 'H' || holesPlayed === 18){ ptsA=maxPts/2; ptsB=maxPts/2; note=`${r.format==='BB'?'Tied':'Halved'} → ${maxPts/2}pts each`; }
     else return; // incomplete
     matchResults[mkey] = { pairA, pairB, ptsA, ptsB, note };
   });
@@ -2440,7 +2467,9 @@ function renderLiveStatus(rndId){
       const relLabel = (net, par) => { const d=net-par; if(d<=-2)return '🦅 Eagle'; if(d===-1)return '🐦 Birdie'; if(d===0)return 'Par'; if(d===1)return 'Bogey'; return `+${d}`; };
       const fmtA = r.format==='BB' ? `${pairA.map(pi=>playerName(pi).split(' ')[0]).join('+')} · Best ${relLabel(lastHole.bestA,par)}` : relLabel(lastHole.bestA,par);
       const fmtB = r.format==='BB' ? `${pairB.map(pi=>playerName(pi).split(' ')[0]).join('+')} · Best ${relLabel(lastHole.bestB,par)}` : relLabel(lastHole.bestB,par);
-      const holeWinnerLabel = lastHole.won==='A' ? `${pairA.map(pi=>playerName(pi).split(' ')[0]).join('+')} wins hole` : lastHole.won==='B' ? `${pairB.map(pi=>playerName(pi).split(' ')[0]).join('+')} wins hole` : 'Hole halved';
+      const holeWinnerLabel = r.format==='BB'
+        ? (lastHole.won==='H' ? 'Hole tied' : `${(lastHole.won==='A'?pairA:pairB).map(pi=>playerName(pi).split(' ')[0]).join('+')} take the hole (running: ${lastHole.runningScore===0?'tied':(lastHole.runningScore<0?pairA:pairB).map(pi=>playerName(pi).split(' ')[0]).join('+')+' by '+Math.abs(lastHole.runningScore)})`)
+        : (lastHole.won==='A' ? `${pairA.map(pi=>playerName(pi).split(' ')[0]).join('+')} wins hole` : lastHole.won==='B' ? `${pairB.map(pi=>playerName(pi).split(' ')[0]).join('+')} wins hole` : 'Hole halved');
       holeEventHtml = `<div class="lsb-match-body"><div style="font-size:10px;font-weight:700;color:var(--ink-lt);text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px">Last: Hole ${lastHole.hole}${holeName(rndId,lastHole.hole-1)?` \u00b7 \u201c${holeName(rndId,lastHole.hole-1)}\u201d`:''} · Par ${par}</div><div style="font-size:12px;margin-bottom:3px">${sideANames}: ${fmtA}</div><div style="font-size:12px;margin-bottom:3px">${sideBNames}: ${fmtB}</div><div style="font-size:12px;font-weight:600;color:${lastHole.won==='H'?'var(--halve)':'var(--green)'}">${holeWinnerLabel}</div></div>`;
     }
     const throughStr = holesPlayed>0 ? `Through ${holesPlayed}${holesPlayed<18?` · ${holesRemaining} to play`:''}` : 'Not started';
