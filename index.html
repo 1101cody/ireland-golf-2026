@@ -1098,6 +1098,23 @@ function renderAll(){
 // HANDICAP UTILS
 // ═══════════════════════════════════════════════════════════
 function courseHcp(hi,slope,rating,par){ return Math.round(hi*(slope/113)+(rating-par)); }
+
+// ── Handicap allowance ─────────────────────────────────────
+// Round 1 was played (and finalized) off FULL course handicap — never change it.
+// From Round 2 on, everyone plays off 80% of course handicap (WHS-style:
+// course handicap first, then × 0.80, rounded).
+const HCP_ALLOWANCE_FROM_ROUND = 1; // rndId >= 1 → 80%
+function playingHcp(rndId, pi){
+  const tee = getRoundTee(rndId);
+  const ch = courseHcp(STATE.players[pi].hi, tee.slope, tee.rating, tee.par);
+  return rndId >= HCP_ALLOWANCE_FROM_ROUND ? Math.round(ch * 0.8) : ch;
+}
+// Strokes received on a hole for SKINS only: 80% handicap AND, from Round 2 on,
+// NO strokes on par 3s. Forfeited strokes are NOT reassigned to other holes.
+function skinsStrokesOnHole(rndId, chcp, h, c){
+  if(rndId >= HCP_ALLOWANCE_FROM_ROUND && c.pars[h] === 3) return 0;
+  return strokesOnHole(chcp, c.si[h]);
+}
 // Official hole name for a round's course (empty string when the course doesn't name the hole)
 function holeName(rndId, h){ const c = COURSES[ROUNDS[rndId]?.course]; return (c && c.names && c.names[h]) || ''; }
 function strokesOnHole(chcp,si){
@@ -1266,7 +1283,7 @@ function renderSchedule(){
         </div>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <span class="rnd-badge ${badgeClass}">${r.label}</span>
-          <span class="pts-badge">${r.pts===4?'4/2/0 pts ★':r.format==='NS'?'2/1.5/1/0.5 pts':'2/1/0 pts'}</span>
+          <span class="pts-badge">${r.format==='NS'?'4/3/2/1 pts':r.pts===4?'4/2/0 pts ★':'2/1/0 pts'}</span>
         </div>
       </div>
       <div style="margin-bottom:10px">
@@ -1632,7 +1649,7 @@ function sv2MatchStatusHtml(rndId, groupIdx, groupPlayers){
     const tee = getRoundTee(rndId);
     const fmtTP = v => v===0?'E':v>0?'+'+v:''+v;
     const rows = (groupPlayers||[]).map(pi => {
-      const chcp = courseHcp(STATE.players[pi].hi, tee.slope, tee.rating, tee.par);
+      const chcp = playingHcp(rndId, pi);
       const gr = STATE.scores[rndId]?.gross?.[pi] || [];
       let gross=0, net=0, holes=0, parPlayed=0;
       c.pars.forEach((par,h)=>{ const g=parseInt(gr[h])||0; if(g){ gross+=g; net+=g-strokesOnHole(chcp,c.si[h]); holes++; parPlayed+=par; } });
@@ -1761,7 +1778,7 @@ function renderScoresV2(){
   const playerRows = players.map(pi => {
     const p = STATE.players[pi];
     const t = playerTeam(pi);
-    const chcp = courseHcp(p.hi, tee.slope, tee.rating, tee.par);
+    const chcp = playingHcp(rndId, pi);
     const strokes = strokesOnHole(chcp, si);
     const gross = sv2GetScore(rndId, pi, hole);
     const relCls = sv2RelClass(gross, par);
@@ -1833,7 +1850,7 @@ function renderScoresV2(){
     <div class="sv2-header">
       <div class="sv2-round-info">
         <div class="sv2-round-name">Round ${r.num} · ${r.course}</div>
-        <div class="sv2-round-sub">${r.date} · ${r.label} · <span style="color:rgba(240,217,138,.7)">${groupLabel}</span></div>
+        <div class="sv2-round-sub">${r.date} · ${r.label}${rndId >= HCP_ALLOWANCE_FROM_ROUND ? ' · 80% hcp' : ''} · <span style="color:rgba(240,217,138,.7)">${groupLabel}</span></div>
       </div>
       <button class="sv2-switch-btn" onclick="sv2SwitchGroup()">Switch to ${nextGroupLabel}</button>
     </div>
@@ -1968,7 +1985,7 @@ function calculateLiveStatus(rndId){
   if(r.format === 'NS'){
     const players = [0,1,2,3,4,5,6,7];
     const standings = players.map(pi => {
-      const chcp = courseHcp(STATE.players[pi].hi, getRoundTee(rndId).slope, getRoundTee(rndId).rating, getRoundTee(rndId).par);
+      const chcp = playingHcp(rndId, pi);
       const gross = STATE.scores[rndId]?.gross?.[pi] || [];
       let netTotal=0, grossTotal=0, holesPlayed=0, parPlayed=0;
       c.pars.forEach((par,h) => {
@@ -2009,7 +2026,7 @@ function calculateMatchLiveStatus(rndId, mkey, pairA, pairB, fmt, c){
   const tee = getRoundTee(rndId);
   const allIn = [...pairA, ...pairB];
   const chcps = {};
-  allIn.forEach(pi => chcps[pi] = courseHcp(STATE.players[pi].hi, tee.slope, tee.rating, tee.par));
+  allIn.forEach(pi => chcps[pi] = playingHcp(rndId, pi));
 
   function grossOf(pi, h){
     const g = parseInt(STATE.scores[rndId]?.matches?.[mkey]?.gross?.[pi]?.[h]);
@@ -2124,7 +2141,7 @@ function calculateOfficialResult(rndId){
   if(r.format === 'NS'){
     const rows = live.standings.filter(x => x.holesPlayed > 0).sort((a,b) => a.netTotal - b.netTotal);
     if(!rows.length) return null;
-    const posPoints = [2, 1.5, 1, 0.5];
+    const posPoints = [4, 3, 2, 1]; // NS: 1st→4, 2nd→3, 3rd→2, 4th→1; ties split
     const pts = {};
     [0,1,2,3,4,5,6,7].forEach(pi => pts[pi] = 0);
     let i = 0;
@@ -2326,14 +2343,14 @@ function computeSkinsForRound(rndId){
   const inPlayers = opt.players.map((v,i)=>v?i:-1).filter(i=>i>=0);
   const stake = opt.stake || 0; const pot = inPlayers.length * stake;
   const chcps = {};
-  inPlayers.forEach(pi => chcps[pi] = courseHcp(STATE.players[pi].hi, getRoundTee(rndId).slope, getRoundTee(rndId).rating, getRoundTee(rndId).par));
+  inPlayers.forEach(pi => chcps[pi] = playingHcp(rndId, pi));
   function getNet(pi, h){
     const scores = STATE.scores[rndId]; if(!scores) return null;
     let g;
     if(r.format==='NS'){ g = parseInt(scores.gross?.[pi]?.[h]); }
     else if(scores.matches){ for(const m of Object.values(scores.matches)){ if(m.gross?.[pi]?.[h]!==undefined){const v=parseInt(m.gross[pi][h]);if(!isNaN(v)){g=v;break;}} } }
     if(!g||isNaN(g)) return null;
-    return g - strokesOnHole(chcps[pi], c.si[h]);
+    return g - skinsStrokesOnHole(rndId, chcps[pi], h, c);
   }
   const roundSkins = []; const pushedHoles = []; const skinWins = {};
   inPlayers.forEach(pi => skinWins[pi] = 0);
@@ -2385,7 +2402,7 @@ function renderSkins(){
     }).join('');
     const projNote = !isFinalized && (roundSkins.length+pushedHoles.length)>0 ? `<div style="padding:8px 14px 2px;font-size:11px;color:var(--ink-lt)">📊 Projected — not official until round is finalized</div>` : '';
     const noScores = inPlayers.length>0 && roundSkins.length===0 && pushedHoles.length===0 ? `<div style="padding:12px 14px;font-size:12px;color:var(--ink-lt)">Scores not yet entered.</div>` : '';
-    html += `<div class="skins-round-block"><div class="skins-round-head"><div><div class="skins-round-title">R${r.num} · ${r.course}</div><div style="font-size:10px;color:var(--ink-lt);margin-top:2px">${r.date} · ${r.label}${isFinalized?' · <span style="color:var(--won);font-weight:700">✓ Finalized</span>':''}</div></div><div class="skins-stake-row"><span>CA$</span><input type="number" min="0" step="5" value="${stake}" onchange="setSkinStake(${r.id},this.value)" style="width:60px"/><span>buy-in</span>${inPlayers.length>0&&pot>0?`<span class="pts-badge" style="margin-left:4px">Pot: CA$${pot}</span>`:''} ${roundLocked?`<span class="skins-locked-label" title="Round is locked, but skins opt-ins can still be corrected here — payouts recalculate automatically">🔒 Round locked · admin edits OK</span>`:''}</div></div><div class="skins-optin-grid">${optGrid}</div>${inPlayers.length>0?`<div class="skins-pot-summary">${potPills}</div>`:''}<div class="skins-results">${projNote}${skinRows}${pushedRows}${noScores}</div></div>`;
+    html += `<div class="skins-round-block"><div class="skins-round-head"><div><div class="skins-round-title">R${r.num} · ${r.course}</div><div style="font-size:10px;color:var(--ink-lt);margin-top:2px">${r.date} · ${r.label}${r.id >= HCP_ALLOWANCE_FROM_ROUND ? ' · 80% hcp, no strokes on par 3s' : ''}${isFinalized?' · <span style="color:var(--won);font-weight:700">✓ Finalized</span>':''}</div></div><div class="skins-stake-row"><span>CA$</span><input type="number" min="0" step="5" value="${stake}" onchange="setSkinStake(${r.id},this.value)" style="width:60px"/><span>buy-in</span>${inPlayers.length>0&&pot>0?`<span class="pts-badge" style="margin-left:4px">Pot: CA$${pot}</span>`:''} ${roundLocked?`<span class="skins-locked-label" title="Round is locked, but skins opt-ins can still be corrected here — payouts recalculate automatically">🔒 Round locked · admin edits OK</span>`:''}</div></div><div class="skins-optin-grid">${optGrid}</div>${inPlayers.length>0?`<div class="skins-pot-summary">${potPills}</div>`:''}<div class="skins-results">${projNote}${skinRows}${pushedRows}${noScores}</div></div>`;
   });
   el.innerHTML = html;
 }
@@ -2498,7 +2515,7 @@ function renderLiveScorecard(rndId){
   const r = ROUNDS[rndId]; const meSlot = ME ? ME.slot : -1;
   let html = `<div class="card" style="overflow:hidden"><div class="card-head"><span class="card-title">${r.course} Scorecards</span><span style="font-size:11px;color:var(--ink-lt)">${r.date}</span></div>`;
   [0,1,2,3,4,5,6,7].forEach(pi => {
-    const c = COURSES[r.course]; const chcp = courseHcp(STATE.players[pi].hi, getRoundTee(rndId).slope, getRoundTee(rndId).rating, getRoundTee(rndId).par);
+    const c = COURSES[r.course]; const chcp = playingHcp(rndId, pi);
     const isMe = pi === meSlot; const t = playerTeam(pi);
     const expandId = `sc-expand-${rndId}-${pi}`;
     let netTotal=0, grossTotal=0, holesPlayed=0, parPlayed=0;
@@ -2525,7 +2542,7 @@ function renderLiveTrip(){
 
 function livePlayerScorecard(rndId, pi){
   const r = ROUNDS[rndId]; const c = COURSES[r.course];
-  const chcp = courseHcp(STATE.players[pi].hi, getRoundTee(rndId).slope, getRoundTee(rndId).rating, getRoundTee(rndId).par);
+  const chcp = playingHcp(rndId, pi);
   let cells = '', total=0, netTotal=0, parPlayed=0;
   c.pars.forEach((par,h)=>{
     let g=null;
@@ -2548,7 +2565,7 @@ function lsbToggleExpand(id){ const el=document.getElementById(id); if(el) el.st
 // getPlayerRoundScores — used by calculateTripStats
 function getPlayerRoundScores(pi, rndId){
   const r=ROUNDS[rndId],c=COURSES[r.course];
-  const chcp=courseHcp(STATE.players[pi].hi,getRoundTee(r.id).slope,getRoundTee(r.id).rating,getRoundTee(r.id).par);
+  const chcp=playingHcp(r.id, pi);
   let gross=0,net=0,holes=0,parPlayed=0;
   const scores=STATE.scores[rndId]; if(!scores) return null;
   c.pars.forEach((_,h)=>{
@@ -2602,7 +2619,7 @@ function renderSettlement(){
     const c = COURSES[r.course];
     const scores = STATE.scores[r.id];
     const chcps = {};
-    inPlayers.forEach(pi => chcps[pi] = courseHcp(STATE.players[pi].hi, getRoundTee(r.id).slope, getRoundTee(r.id).rating, getRoundTee(r.id).par));
+    inPlayers.forEach(pi => chcps[pi] = playingHcp(r.id, pi));
 
     function getNet(pi, h){
       if(!scores) return null;
@@ -2610,7 +2627,7 @@ function renderSettlement(){
       if(r.format==='NS'){ g = parseInt(scores.gross?.[pi]?.[h]); }
       else if(scores.matches){ for(const m of Object.values(scores.matches)){ if(m.gross?.[pi]?.[h]!==undefined){const v=parseInt(m.gross[pi][h]);if(!isNaN(v)){g=v;break;}} } }
       if(!g||isNaN(g)) return null;
-      return g - strokesOnHole(chcps[pi], c.si[h]);
+      return g - skinsStrokesOnHole(r.id, chcps[pi], h, c);
     }
 
     const roundSkins = [];
