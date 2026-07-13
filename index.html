@@ -625,6 +625,48 @@ function applyMeta(key, data){
 let realtimeWs = null;
 let realtimeHB = null;
 let realtimeSubs = {};
+let lastRealtimeMsg = 0;
+
+// ───────────────────────────────────────────────────────────
+// SCORE MERGING — scores are one row per round, but different
+// phones score different sections of it simultaneously (match
+// m0 vs m1, or different NS player rows). Never replace the
+// whole round: merge section-by-section, and protect sections
+// THIS device edited in the last 45s (our own push will carry
+// them; an older snapshot from another phone must not undo
+// what's being typed right now).
+// ───────────────────────────────────────────────────────────
+const EDIT_GUARD_MS = 45000;
+const lastLocalEdit = {}; // `${rndId}:${section}` -> timestamp
+function markLocalEdit(rndId, section){ lastLocalEdit[`${rndId}:${section}`] = Date.now(); }
+
+function mergeRoundScores(rndId, incoming){
+  if(!incoming) return false;
+  const local = STATE.scores[rndId] || {};
+  const now = Date.now();
+  const isFresh = s => (now - (lastLocalEdit[`${rndId}:${s}`]||0)) < EDIT_GUARD_MS;
+  const out = {};
+
+  const lm = local.matches||{}, im = incoming.matches||{};
+  const mkeys = new Set([...Object.keys(lm), ...Object.keys(im)]);
+  if(mkeys.size){
+    out.matches = {};
+    mkeys.forEach(k => {
+      out.matches[k] = (im[k] === undefined || (lm[k] !== undefined && isFresh(k))) ? (lm[k] !== undefined ? lm[k] : im[k]) : im[k];
+    });
+  }
+  const lg = local.gross||{}, ig = incoming.gross||{};
+  const pis = new Set([...Object.keys(lg), ...Object.keys(ig)]);
+  if(pis.size){
+    out.gross = {};
+    pis.forEach(pi => {
+      out.gross[pi] = (ig[pi] === undefined || (lg[pi] !== undefined && isFresh('p'+pi))) ? (lg[pi] !== undefined ? lg[pi] : ig[pi]) : ig[pi];
+    });
+  }
+  const changed = JSON.stringify(STATE.scores[rndId]||null) !== JSON.stringify(Object.keys(out).length?out:null);
+  if(Object.keys(out).length) STATE.scores[rndId] = out;
+  return changed;
+}
 
 function connectRealtime(){
   const wsUrl = `wss://cpchjtvsnhasmdpkmold.supabase.co/realtime/v1/websocket?apikey=${SUPA_KEY}&vsn=1.0.0`;
@@ -632,22 +674,38 @@ function connectRealtime(){
 
   realtimeWs.onopen = () => {
     setSyncDot('live');
-    // Join channel for each table
-    ['players','draws','scores','results','chat','notifications','trip_meta'].forEach(table => {
-      realtimeWs.send(JSON.stringify({
-        topic: `realtime:public:${table}`,
-        event: 'phx_join',
-        payload: {},
-        ref: table
-      }));
-    });
+    lastRealtimeMsg = Date.now();
+    // Modern Supabase Realtime: one channel, postgres_changes subscriptions per table
+    realtimeWs.send(JSON.stringify({
+      topic: 'realtime:trip-db',
+      event: 'phx_join',
+      payload: {
+        config: {
+          broadcast: { self: false },
+          presence: { key: '' },
+          postgres_changes: ['players','draws','scores','results','chat','notifications','trip_meta']
+            .map(table => ({ event: '*', schema: 'public', table }))
+        },
+        access_token: SUPA_KEY
+      },
+      ref: '1'
+    }));
     realtimeHB = setInterval(()=>{
-      realtimeWs.send(JSON.stringify({topic:'phoenix',event:'heartbeat',payload:{},ref:'hb'}));
+      if(realtimeWs && realtimeWs.readyState === 1)
+        realtimeWs.send(JSON.stringify({topic:'phoenix',event:'heartbeat',payload:{},ref:'hb'}));
     }, 25000);
   };
 
   realtimeWs.onmessage = (e) => {
     const msg = JSON.parse(e.data);
+    lastRealtimeMsg = Date.now();
+    // Modern protocol: DB events arrive as `postgres_changes`
+    if(msg.event === 'postgres_changes'){
+      const d = msg.payload?.data;
+      if(d && d.table) handleRealtimeEvent(d.table, d.type, d.record, d.old_record);
+      return;
+    }
+    // Legacy fallback (harmless if never received)
     if(msg.event === 'INSERT' || msg.event === 'UPDATE' || msg.event === 'DELETE'){
       const table = msg.topic.split(':')[2];
       handleRealtimeEvent(table, msg.event, msg.payload?.record, msg.payload?.old_record);
@@ -663,6 +721,48 @@ function connectRealtime(){
   realtimeWs.onerror = () => setSyncDot('err');
 }
 
+// ───────────────────────────────────────────────────────────
+// POLLING SAFETY NET — even if the websocket is blocked or
+// drops (course WiFi…), all phones converge every 20s. Uses
+// the same merge logic, so polling can never clobber typing.
+// ───────────────────────────────────────────────────────────
+let pollTimer = null;
+function startPolling(){
+  clearInterval(pollTimer);
+  pollTimer = setInterval(pollServer, 20000);
+}
+async function pollServer(){
+  if(document.hidden) return;
+  try{
+    const [scores, draws, results] = await Promise.all([
+      sb('scores?select=round_id,data'),
+      sb('draws?select=round_id,pairs'),
+      sb('results?select=round_id,data'),
+    ]);
+    let changed = false;
+    (scores||[]).forEach(s => { if(mergeRoundScores(s.round_id, s.data)) changed = true; });
+    (draws||[]).forEach(d => {
+      if(JSON.stringify(STATE.draws[d.round_id]) !== JSON.stringify(d.pairs)){ STATE.draws[d.round_id] = d.pairs; changed = true; }
+    });
+    (results||[]).forEach(r => {
+      if(JSON.stringify(STATE.results[r.round_id]) !== JSON.stringify(r.data)){ STATE.results[r.round_id] = r.data; changed = true; }
+    });
+    if(metaSyncAvailable){
+      try{
+        const meta = await sb('trip_meta?select=key,data');
+        (meta||[]).forEach(m => {
+          if(JSON.stringify(STATE[m.key]) !== JSON.stringify(m.data)){ applyMeta(m.key, m.data); changed = true; }
+        });
+      }catch(e){ metaSyncAvailable = false; }
+    }
+    if(changed){
+      saveLocal();
+      renderAll();
+    }
+    setSyncDot('live');
+  }catch(e){ /* offline — realtime reconnect + next poll will retry */ }
+}
+
 function handleRealtimeEvent(table, event, record, oldRecord){
   if(table === 'players' && record){
     const i = record.slot;
@@ -674,8 +774,8 @@ function handleRealtimeEvent(table, event, record, oldRecord){
     renderSchedule(); renderScores();
   }
   if(table === 'scores' && record){
-    STATE.scores[record.round_id] = record.data;
-    renderScores(); renderSkins();
+    const changed = mergeRoundScores(record.round_id, record.data);
+    if(changed){ saveLocal(); renderScores(); renderSkins(); renderScoreboard(); renderSettlement(); }
   }
   if(table === 'results' && record){
     STATE.results[record.round_id] = record.data;
@@ -1565,49 +1665,34 @@ function sv2MatchStatusHtml(rndId, groupIdx, groupPlayers){
   if(!draw) return '';
   const mkey = sv2GetMkey(groupIdx);
   if(!STATE.scores[rndId]?.matches?.[mkey]) return '';
-  const mdata = STATE.scores[rndId].matches[mkey];
   const matchups = r.format === 'SMP'
     ? draw.map(pair=>[[pair[0]],[pair[1]]])
     : [[draw[0],draw[1]],[draw[2],draw[3]]];
   const matchup = matchups[groupIdx];
   if(!matchup) return '';
   const [pairA, pairB] = matchup;
-  const allIn = [...pairA, ...pairB];
-  const chcps = {};
-  allIn.forEach(pi => chcps[pi] = courseHcp(STATE.players[pi].hi, getRoundTee(r.id).slope, getRoundTee(r.id).rating, getRoundTee(r.id).par));
-  const gross = {};
-  allIn.forEach(pi => gross[pi] = mdata.gross?.[pi] || Array(18).fill(''));
 
-  function netH(pi, h){ const g=parseInt(gross[pi][h]); if(!g||isNaN(g))return null; return g-strokesOnHole(chcps[pi],c.si[h]); }
+  // Single source of truth: the same hole-by-hole match-play engine used by
+  // the Live tab and finalization (best ball = best net per side per hole).
+  const ms = calculateMatchLiveStatus(rndId, mkey, pairA, pairB, r.format, c);
+  if(ms.holesPlayed === 0) return '';
 
-  let score = 0, holesPlayed = 0;
-  let bbA = 0, bbB = 0;
-  c.pars.forEach((par, h) => {
-    if(r.format === 'BB'){
-      const aN = pairA.map(pi=>netH(pi,h)).filter(x=>x!==null);
-      const bN = pairB.map(pi=>netH(pi,h)).filter(x=>x!==null);
-      if(aN.length && bN.length){ holesPlayed++; bbA+=Math.min(...aN); bbB+=Math.min(...bN); }
-    } else {
-      const nA = netH(pairA[0], h), nB = netH(pairB[0], h);
-      if(nA !== null && nB !== null){ holesPlayed++; if(nA<nB)score++; else if(nB<nA)score--; }
-    }
-  });
-  if(holesPlayed === 0) return '';
-  const through = holesPlayed;
+  const nA = pairA.map(pi=>playerName(pi).split(' ')[0]).join('+');
+  const nB = pairB.map(pi=>playerName(pi).split(' ')[0]).join('+');
   let label, cls;
-  if(r.format === 'BB'){
-    const diff = bbA - bbB;
-    if(diff < 0){ label = `Side A leads ${Math.abs(diff)}`; cls = 'up'; }
-    else if(diff > 0){ label = `Side B leads ${diff}`; cls = 'dn'; }
-    else { label = 'All Square'; cls = 'sq'; }
-  } else {
-    if(score > 0){ label = `${score} UP`; cls = 'up'; }
-    else if(score < 0){ label = `${Math.abs(score)} DOWN`; cls = 'dn'; }
-    else { label = 'All Square'; cls = 'sq'; }
+  if(ms.winner === 'H'){ label = 'Match Halved'; cls = 'sq'; }
+  else if(ms.winner === 'A'){ label = `${nA} win ${ms.over?ms.overReason:`${ms.matchScore} UP`}`; cls = 'up'; }
+  else if(ms.winner === 'B'){ label = `${nB} win ${ms.over?ms.overReason:`${Math.abs(ms.matchScore)} UP`}`; cls = 'dn'; }
+  else if(ms.matchScore === 0){ label = 'All Square'; cls = 'sq'; }
+  else {
+    const n = Math.abs(ms.matchScore);
+    label = `${ms.matchScore>0?nA:nB} ${n} Up${ms.holesRemaining===n?' · Dormie':''}`;
+    cls = ms.matchScore>0 ? 'up' : 'dn';
   }
+  const fmtName = r.format==='BB' ? 'Best Ball Match' : r.format==='SMP' ? 'Singles Match' : 'Match Play';
   return `<div class="sv2-match-status">
     <div class="sv2-ms-score ${cls}">${label}</div>
-    <div class="sv2-ms-sub">Through ${through}</div>
+    <div class="sv2-ms-sub">${fmtName} · ${ms.winner ? (ms.over ? `Closed out after ${ms.holesPlayed}` : 'Final') : `Through ${ms.holesPlayed}`}</div>
   </div>`;
 }
 
@@ -1769,11 +1854,28 @@ function renderScoresV2(){
   </div>`;
 }
 
-async function pushScore(rndId){
-  const data = STATE.scores[rndId];
-  saveLocal();
+const pushScoreTimers = {};
+function pushScore(rndId){
+  saveLocal(); // local is always safe immediately
+  clearTimeout(pushScoreTimers[rndId]);
+  pushScoreTimers[rndId] = setTimeout(()=>pushScoreNow(rndId), 700);
+}
+async function pushScoreNow(rndId){
+  // Read-merge-write: pull the server row first and merge in any sections other
+  // phones have written (our recently-edited sections are protected), so our
+  // write can never overwrite another group's scores with a stale snapshot.
   try{
-    await sb(`scores?round_id=eq.${rndId}`,{method:'PATCH',body:{data},prefer:'return=minimal'});
+    const rows = await sb(`scores?round_id=eq.${rndId}&select=data`);
+    if(rows && rows[0] && mergeRoundScores(rndId, rows[0].data)){
+      saveLocal(); renderScores(); renderSkins(); renderScoreboard();
+    }
+  }catch(e){ /* offline or row missing — push what we have */ }
+  const data = STATE.scores[rndId];
+  try{
+    const res = await sb(`scores?round_id=eq.${rndId}`,{method:'PATCH',body:{data},prefer:'return=representation'});
+    if(!res || (Array.isArray(res) && res.length===0)){
+      await sb('scores',{method:'POST',body:{round_id:rndId,data},prefer:'return=minimal'});
+    }
     setSyncDot('live');
   }catch(e){
     try{
@@ -1823,6 +1925,7 @@ function setNSScore(rndId, mkey, pi, hole, val){
   if(!STATE.scores[rndId].gross[pi]) STATE.scores[rndId].gross[pi]=Array(18).fill('');
   const intVal = parseInt(val)||0;
   STATE.scores[rndId].gross[pi][hole] = intVal > 0 ? intVal : '';
+  markLocalEdit(rndId, 'p'+pi);
   const key = `${rndId}-ns-${pi}`;
   if(intVal > 0){ activeCells[key] = hole; } else { delete activeCells[key]; }
   pushScore(rndId);
@@ -1837,6 +1940,7 @@ function setMatchScore(rndId, mkey, pi, hole, val){
   if(!STATE.scores[rndId].matches[mkey].gross[pi]) STATE.scores[rndId].matches[mkey].gross[pi]=Array(18).fill('');
   const intVal = parseInt(val)||0;
   STATE.scores[rndId].matches[mkey].gross[pi][hole] = intVal > 0 ? intVal : '';
+  markLocalEdit(rndId, mkey);
   const key = `${rndId}-${mkey}-${pi}`;
   if(intVal > 0){ activeCells[key] = hole; } else { delete activeCells[key]; }
   pushScore(rndId);
@@ -2701,6 +2805,7 @@ loadAll().then(()=>{
   if(!ME) showIdentityPicker();
   else document.getElementById('meDisplay').textContent=ME.name+' ✏️';
   connectRealtime();
+  startPolling();
 });
 </script>
 </body>
