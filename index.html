@@ -2021,7 +2021,9 @@ function calculateLiveStatus(rndId){
 // calculateMatchLiveStatus: per-matchup status.
 // BB  = best ball AGGREGATE: each side counts its best net per hole,
 //       totaled across the round; low team total wins the matchup.
-// MP/SMP = individual net match play (hole-by-hole, dormie, closeouts).
+// MP  = four-ball net match play: best net of each 2-man side, hole-by-hole,
+//       with dormie and closeouts.
+// SMP = singles net match play (1v1, hole-by-hole, dormie, closeouts).
 function calculateMatchLiveStatus(rndId, mkey, pairA, pairB, fmt, c){
   const tee = getRoundTee(rndId);
   const allIn = [...pairA, ...pairB];
@@ -2071,10 +2073,17 @@ function calculateMatchLiveStatus(rndId, mkey, pairA, pairB, fmt, c){
   }
 
   // ── MP/SMP: hole-by-hole net match play ──
-  // holeResult: individual net comparison on a single hole.
+  // holeResult: compare the BEST net of each side on a single hole.
+  // MP sides have 2 players (four-ball match play — best ball of the pair
+  // counts, hole by hole); SMP sides have 1 player (singles). Using the
+  // side's best net covers both. (Previous versions compared only the
+  // first player of each pair, silently ignoring the second player's
+  // scores and handicap strokes in MP.)
   function holeResult(h){
-    const nA = netOf(pairA[0], h), nB = netOf(pairB[0], h);
-    if(nA === null || nB === null) return null;
+    const aNets = pairA.map(pi => netOf(pi, h)).filter(x => x !== null);
+    const bNets = pairB.map(pi => netOf(pi, h)).filter(x => x !== null);
+    if(!aNets.length || !bNets.length) return null;
+    const nA = Math.min(...aNets), nB = Math.min(...bNets);
     return { won: nA < nB ? 'A' : nB < nA ? 'B' : 'H', bestA: nA, bestB: nB };
   }
 
@@ -2096,8 +2105,8 @@ function calculateMatchLiveStatus(rndId, mkey, pairA, pairB, fmt, c){
       over = true;
       overReason = `${Math.abs(matchScore)}&${holesRemaining}`;
     }
-    const grossA = [grossOf(pairA[0], h)].filter(x=>x!==null);
-    const grossB = [grossOf(pairB[0], h)].filter(x=>x!==null);
+    const grossA = pairA.map(pi => grossOf(pi, h)).filter(x=>x!==null);
+    const grossB = pairB.map(pi => grossOf(pi, h)).filter(x=>x!==null);
     holeLog.push({ hole: h+1, par, won: res.won, bestA: res.bestA, bestB: res.bestB, runningScore: matchScore, grossA, grossB });
   });
 
@@ -2106,12 +2115,11 @@ function calculateMatchLiveStatus(rndId, mkey, pairA, pairB, fmt, c){
 
   if(holesPlayed > 0){
     if(over){
-      const winner = matchScore > 0 ? 'A' : 'B';
-      statusLabel = `Side ${winner} wins ${overReason}`;
+      statusLabel = `${matchScore > 0 ? firstNames(pairA) : firstNames(pairB)} wins ${overReason}`;
       statusCls = matchScore > 0 ? 'up' : 'dn';
     } else if(holesPlayed === 18){
-      if(matchScore > 0){ statusLabel = `Side A wins ${matchScore} UP`; statusCls='up'; }
-      else if(matchScore < 0){ statusLabel = `Side B wins ${Math.abs(matchScore)} UP`; statusCls='dn'; }
+      if(matchScore > 0){ statusLabel = `${firstNames(pairA)} wins ${matchScore} UP`; statusCls='up'; }
+      else if(matchScore < 0){ statusLabel = `${firstNames(pairB)} wins ${Math.abs(matchScore)} UP`; statusCls='dn'; }
       else { statusLabel = 'Halved'; statusCls='sq'; }
     } else {
       if(matchScore > 0){
@@ -2139,7 +2147,11 @@ function calculateOfficialResult(rndId){
   const live = calculateLiveStatus(rndId);
 
   if(r.format === 'NS'){
-    const rows = live.standings.filter(x => x.holesPlayed > 0).sort((a,b) => a.netTotal - b.netTotal);
+    // Rank by NET TO PAR (same basis as the live leaderboard) — never by raw
+    // net total. Raw totals made anyone with a missing hole rank artificially
+    // high (17 holes always beats 18), which corrupted the points allocation.
+    const rows = live.standings.filter(x => x.holesPlayed > 0)
+      .sort((a,b) => a.netToPar - b.netToPar || b.holesPlayed - a.holesPlayed);
     if(!rows.length) return null;
     const posPoints = [4, 3, 2, 1]; // NS: 1st→4, 2nd→3, 3rd→2, 4th→1; ties split
     const pts = {};
@@ -2147,7 +2159,7 @@ function calculateOfficialResult(rndId){
     let i = 0;
     while(i < rows.length){
       let j = i;
-      while(j < rows.length && rows[j].netTotal === rows[i].netTotal) j++;
+      while(j < rows.length && rows[j].netToPar === rows[i].netToPar && rows[j].holesPlayed === rows[i].holesPlayed) j++;
       const tiedPts = Array.from({length:j-i}, (_,k) => posPoints[i+k]||0);
       const splitPts = tiedPts.reduce((a,b)=>a+b,0) / (j-i);
       for(let k=i; k<j; k++) pts[rows[k].pi] = splitPts;
@@ -2206,6 +2218,19 @@ async function finalizeRound(rndId){
     if(incomplete.length > 0){
       if(!confirm(`${incomplete.length} match${incomplete.length>1?'es':''} not yet complete. Finalize anyway?`)) return;
     }
+  } else {
+    // NS: warn if anyone's card is incomplete — points are position-based,
+    // so finalizing early or with a missing hole locks in the wrong result.
+    const live = calculateLiveStatus(rndId);
+    const started = live.standings.filter(x => x.holesPlayed > 0);
+    const partial = started.filter(x => x.holesPlayed < 18);
+    const notStarted = 8 - started.length;
+    if(partial.length > 0 || notStarted > 0){
+      const parts = [];
+      if(partial.length) parts.push(`${partial.map(x=>playerName(x.pi)).join(', ')} ${partial.length>1?'have':'has'} fewer than 18 holes entered`);
+      if(notStarted) parts.push(`${notStarted} player${notStarted>1?'s have':' has'} no scores`);
+      if(!confirm(`⚠️ ${parts.join(' and ')}. Points will be awarded on net-to-par through the holes entered. Finalize anyway?`)) return;
+    }
   }
 
   STATE.results[rndId] = result;
@@ -2232,6 +2257,18 @@ async function finalizeRound(rndId){
 // Legacy wrappers — delegate to finalizeRound; kept so no other code breaks
 async function saveNSResult(rndId){ await finalizeRound(rndId); }
 async function saveMatchResult(rndId, mkey, score, holesPlayed, holeCount, maxPts){ await finalizeRound(rndId); }
+
+// refinalizeRound: recompute a round that was already finalized (e.g. after
+// correcting a score, or to repost with fixed scoring logic) and push the
+// updated result to standings. Respects the admin round lock.
+async function refinalizeRound(rndId){
+  if(STATE.roundLocks[rndId]){ showAlert('🔒 Round is locked — use Admin Unlock on the Draws tab first.','red'); return; }
+  const fresh = calculateOfficialResult(rndId);
+  if(!fresh){ showAlert('No scores to recompute from.','red'); return; }
+  if(!confirm(`Recompute Round ${ROUNDS[rndId].num} from the current scores and repost to standings? This replaces the previously finalized result.`)) return;
+  STATE.results[rndId] = null;
+  await finalizeRound(rndId);
+}
 
 // ── Scroll position helpers ──
 function captureScrollPositions(containerId){
@@ -2461,6 +2498,7 @@ function renderLiveStatus(rndId){
     }
     html += `</div>`;
     if(!isFinalized && hasScores) html += `<div style="margin-top:14px"><button class="btn btn-gold" style="width:100%;padding:14px;font-size:15px" onclick="finalizeRound(${rndId})">🏁 Finalize Round ${r.num} → Post to Standings</button><div style="text-align:center;font-size:11px;color:var(--ink-lt);margin-top:6px">Official results only update standings when you finalize</div></div>`;
+    else if(isFinalized && hasScores) html += `<div style="margin-top:14px;text-align:center"><button class="btn btn-outline btn-sm" onclick="refinalizeRound(${rndId})">↻ Re-finalize Round ${r.num} (recompute from current scores)</button></div>`;
     html += renderSkinsCard(rndId, isFinalized);
     return html;
   }
@@ -2495,6 +2533,7 @@ function renderLiveStatus(rndId){
 
   const anyComplete = (matches||[]).some(m => m.winner !== null || m.holesPlayed === 18);
   if(!isFinalized && anyComplete) html += `<div style="margin-top:14px"><button class="btn btn-gold" style="width:100%;padding:14px;font-size:15px" onclick="finalizeRound(${rndId})">🏁 Finalize Round ${r.num} → Post to Standings</button><div style="text-align:center;font-size:11px;color:var(--ink-lt);margin-top:6px">Official results only update standings when you finalize</div></div>`;
+  else if(isFinalized && (matches||[]).some(m => m.holesPlayed > 0)) html += `<div style="margin-top:14px;text-align:center"><button class="btn btn-outline btn-sm" onclick="refinalizeRound(${rndId})">↻ Re-finalize Round ${r.num} (recompute from current scores)</button></div>`;
 
   // Projected skins
   html += renderSkinsCard(rndId, isFinalized);
