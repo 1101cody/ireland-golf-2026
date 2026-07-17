@@ -629,12 +629,13 @@ let lastRealtimeMsg = 0;
 
 // ───────────────────────────────────────────────────────────
 // SCORE MERGING — scores are one row per round, but different
-// phones score different sections of it simultaneously (match
-// m0 vs m1, or different NS player rows). Never replace the
-// whole round: merge section-by-section, and protect sections
-// THIS device edited in the last 45s (our own push will carry
-// them; an older snapshot from another phone must not undo
-// what's being typed right now).
+// phones score different sections of it simultaneously — and
+// in match play, two phones in the SAME group score the SAME
+// match (one per pair). Never replace whole rounds OR whole
+// matches: merge per player row within each match, and protect
+// only the rows THIS device edited in the last 45s (our own
+// push will carry them; an older snapshot from another phone
+// must not undo what's being typed right now).
 // ───────────────────────────────────────────────────────────
 const EDIT_GUARD_MS = 45000;
 const lastLocalEdit = {}; // `${rndId}:${section}` -> timestamp
@@ -652,7 +653,25 @@ function mergeRoundScores(rndId, incoming){
   if(mkeys.size){
     out.matches = {};
     mkeys.forEach(k => {
-      out.matches[k] = (im[k] === undefined || (lm[k] !== undefined && isFresh(k))) ? (lm[k] !== undefined ? lm[k] : im[k]) : im[k];
+      const lmk = lm[k], imk = im[k];
+      if(imk === undefined){ out.matches[k] = lmk; return; }
+      if(lmk === undefined){ out.matches[k] = imk; return; }
+      // v4.10 FIX — merge per PLAYER ROW, not per whole match.
+      // Two phones in the same fourball score the SAME match key (one per
+      // pair). Guarding the whole match meant each actively-scoring phone
+      // kept its ENTIRE local match blob during read-merge-write, silently
+      // discarding the other phone's rows — and then pushed that blob,
+      // erasing the other phone's scores on the server. Each device only
+      // ever saw its own entries. Per-row freshness keys fix it.
+      const lg2 = lmk.gross||{}, ig2 = imk.gross||{};
+      const rows = new Set([...Object.keys(lg2), ...Object.keys(ig2)]);
+      const gross = {};
+      rows.forEach(pi => {
+        gross[pi] = (ig2[pi] === undefined || (lg2[pi] !== undefined && isFresh(`${k}:p${pi}`)))
+          ? (lg2[pi] !== undefined ? lg2[pi] : ig2[pi])
+          : ig2[pi];
+      });
+      out.matches[k] = {...lmk, ...imk, gross};
     });
   }
   const lg = local.gross||{}, ig = incoming.gross||{};
@@ -1963,7 +1982,7 @@ function setMatchScore(rndId, mkey, pi, hole, val){
   if(!STATE.scores[rndId].matches[mkey].gross[pi]) STATE.scores[rndId].matches[mkey].gross[pi]=Array(18).fill('');
   const intVal = parseInt(val)||0;
   STATE.scores[rndId].matches[mkey].gross[pi][hole] = intVal > 0 ? intVal : '';
-  markLocalEdit(rndId, mkey);
+  markLocalEdit(rndId, `${mkey}:p${pi}`);
   const key = `${rndId}-${mkey}-${pi}`;
   if(intVal > 0){ activeCells[key] = hole; } else { delete activeCells[key]; }
   pushScore(rndId);
