@@ -1134,6 +1134,21 @@ function skinsStrokesOnHole(rndId, chcp, h, c){
   if(rndId >= HCP_ALLOWANCE_FROM_ROUND && c.pars[h] === 3) return 0;
   return strokesOnHole(chcp, c.si[h]);
 }
+// ── Singles Match Play (SMP) match handicaps ───────────────
+// In a 1v1 match, strokes come from the DIFFERENCE between the two players'
+// playing handicaps (80% trip rule): the lower player plays off scratch and
+// the higher player receives (higher − lower) strokes, allocated by stroke
+// index. This applies to the MATCH only — skins for the same round still use
+// each player's full playing handicap.
+function smpMatchHcp(rndId, pi){
+  const own = playingHcp(rndId, pi);
+  const draw = STATE.draws[rndId];
+  if(!draw) return own;
+  const pair = draw.find(p => Array.isArray(p) && p.includes(pi));
+  if(!pair || pair.length < 2) return own;
+  const opp = pair[0] === pi ? pair[1] : pair[0];
+  return Math.max(0, own - playingHcp(rndId, opp));
+}
 // Official hole name for a round's course (empty string when the course doesn't name the hole)
 function holeName(rndId, h){ const c = COURSES[ROUNDS[rndId]?.course]; return (c && c.names && c.names[h]) || ''; }
 function strokesOnHole(chcp,si){
@@ -1361,15 +1376,19 @@ function renderDrawPairs(r,draw){
   }
   if(fmt==='SMP'){
     // draw is [[p0,p1],[p2,p3],[p4,p5],[p6,p7]] — each pair is a 1v1 singles match
-    return `<div style="font-size:12px;color:#555;margin-bottom:8px">Singles Matches:</div>`+
-      draw.map((pair,i)=>`
+    return `<div style="font-size:12px;color:#555;margin-bottom:8px">Singles Matches <span style="font-size:10px;color:#888">(match play hcps — strokes are the difference between the two players)</span>:</div>`+
+      draw.map((pair,i)=>{
+        const s0 = smpMatchHcp(r.id, pair[0]), s1 = smpMatchHcp(r.id, pair[1]);
+        const strokeNote = s0>0 ? `${playerName(pair[0]).split(' ')[0]} gets ${s0}` : s1>0 ? `${playerName(pair[1]).split(' ')[0]} gets ${s1}` : 'level';
+        return `
         <div class="draw-pair">
           <span style="font-size:10px;color:#888;min-width:16px">M${i+1}</span>
           <span class="chip chip-${playerTeam(pair[0]).color}">${playerName(pair[0])}</span>
           <span class="draw-vs">vs</span>
           <span class="chip chip-${playerTeam(pair[1]).color}">${playerName(pair[1])}</span>
-          <span style="font-size:10px;color:#888">→ 4/2/0 pts</span>
-        </div>`).join('');
+          <span style="font-size:10px;color:#888">· ${strokeNote} · 4/2/0 pts</span>
+        </div>`;
+      }).join('');
   }
   const matchups=[[draw[0],draw[1]],[draw[2],draw[3]]];
   return `<div style="font-size:12px;color:#555;margin-bottom:8px">Matchups:</div>`+
@@ -1826,7 +1845,8 @@ function renderScoresV2(){
   const playerRows = players.map(pi => {
     const p = STATE.players[pi];
     const t = playerTeam(pi);
-    const chcp = playingHcp(rndId, pi);
+    const isSMP = r.format === 'SMP';
+    const chcp = isSMP ? smpMatchHcp(rndId, pi) : playingHcp(rndId, pi);
     const strokes = strokesOnHole(chcp, si);
     const gross = sv2GetScore(rndId, pi, hole);
     const relCls = sv2RelClass(gross, par);
@@ -1838,7 +1858,7 @@ function renderScoresV2(){
     return `<div class="sv2-player-row${isMe?' sv2-me':''}">
       <div class="sv2-player-info">
         <div class="sv2-player-name">${p.name}${isMe?`<span class="sv2-player-badge">YOU</span>`:''}</div>
-        <div class="sv2-player-meta"><span class="chip chip-${t.color}" style="font-size:10px">${t.name}</span> · HCP ${chcp}${strokes>0?` · ${strokes} stroke${strokes>1?'s':''} here`:''}</div>
+        <div class="sv2-player-meta"><span class="chip chip-${t.color}" style="font-size:10px">${t.name}</span> · ${isSMP?'Match ':''}HCP ${chcp}${strokes>0?` · ${strokes} stroke${strokes>1?'s':''} here`:''}</div>
       </div>
       <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
         ${strokeDots}
@@ -2076,7 +2096,17 @@ function calculateMatchLiveStatus(rndId, mkey, pairA, pairB, fmt, c){
   const tee = getRoundTee(rndId);
   const allIn = [...pairA, ...pairB];
   const chcps = {};
-  allIn.forEach(pi => chcps[pi] = playingHcp(rndId, pi));
+  if(fmt === 'SMP'){
+    // Singles: match play handicaps — lower player off scratch, higher player
+    // receives the difference in playing handicaps, taken by stroke index.
+    // (Skins for this round still use full playing handicaps elsewhere.)
+    const a = pairA[0], b = pairB[0];
+    const chA = playingHcp(rndId, a), chB = playingHcp(rndId, b);
+    chcps[a] = Math.max(0, chA - chB);
+    chcps[b] = Math.max(0, chB - chA);
+  } else {
+    allIn.forEach(pi => chcps[pi] = playingHcp(rndId, pi));
+  }
 
   function grossOf(pi, h){
     const g = parseInt(STATE.scores[rndId]?.matches?.[mkey]?.gross?.[pi]?.[h]);
